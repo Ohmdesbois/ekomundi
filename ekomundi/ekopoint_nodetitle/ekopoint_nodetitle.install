@@ -1,0 +1,33 @@
+<?php
+
+/**
+ * @file
+ * Installation file for the automatic nodetitle module
+ */
+
+/**
+ * Implements hook_install().
+ */
+function ekopoint_nodetitle_install() {
+  db_query("UPDATE {system} SET weight = 5 WHERE name = 'ekopoint_nodetitle'");
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function ekopoint_nodetitle_uninstall() {
+  foreach (node_type_get_names('names') as $type => $type_name) {
+    variable_del('ekont_' . $type);
+    variable_del('ekont_pattern_' . $type);
+    variable_del('ekont_php_' . $type);
+  }
+}
+
+/**
+ * make sure hooks are invoked after cck main hooks
+ */
+function ekopoint_nodetitle_update_1() {
+  $ret = array();
+  $ret[] = update_sql("UPDATE {system} SET weight = 5 WHERE name = 'ekopoint_nodetitle'");
+  return $ret;
+}

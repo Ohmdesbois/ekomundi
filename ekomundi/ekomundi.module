@@ -1,0 +1,1150 @@
+<?php
+
+
+drupal_add_css(drupal_get_path('module','ekomundi').'/ekomundi.css');
+
+require_once drupal_get_path('module','ekomundi').'/includes/define.inc';
+require_once drupal_get_path('module','ekomundi').'/includes/ekomundi.functions.inc';
+require_once drupal_get_path('module','ekomundi').'/ekomundi.concat.inc';
+
+
+
+
+
+/**
+ * Implements hook_views_api().
+ */
+function ekomundi_views_api() {
+  return array(
+    'api' => 3.0,
+    'path' => drupal_get_path('module', 'ekomundi') . '/views',
+  );
+}
+
+/**
+ * Implements hook_permission().
+ */
+function ekomundi_permission() {
+  return array(
+    'send group mail' =>  array(
+      'title' => t('Send mail to group\'s members'),
+      'description' => t('Allow people who has "administrer group permission" to send mail to group members.'),
+    ),
+    'administer ekomundi' => array(
+      'title' => t('Administer Ekomundi'),
+      'description' => t('Allow people to administer ekomundi.'),
+    ),
+  );
+
+}
+
+/**
+ * Implements hook_menu().
+ */
+function ekomundi_menu() {
+  $items = array();
+  $items['admin/config/ekomundi'] = array(
+    'title' => 'Ekomundi',
+    'description' => 'Manage ekomundi.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekomundi_config'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer ekomundi'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'ekomundi.admin.inc',
+  );
+  /*$items['admin/config/ekomundi/audience-group'] = array(
+    'title' => 'Audience by group',
+    'description' => t('Manage audience group visibility for each content group.'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekomundi_config_audience_group_form'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer ekomundi'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'ekomundi.admin.inc',
+  );
+  $items['admin/config/ekomundi/manage'] = array(
+    'title' => 'Manage',
+    'description' => 'Enable and disable...',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekomundi_config'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'file' => 'ekomundi.admin.inc',
+  );
+  $items['admin/config/ekomundi/extra'] = array(
+    'title' => 'Extra',
+    'description' => '...',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekomundi_config'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => "ekomundi.admin.inc",
+    'weight' => 10,
+  );*/
+  $items['ekomundi_ajax'] = array(
+    'page callback' => 'ekomundi_ajax_response',
+    'access callback' => 'user_access',
+    'access arguments' => array('administer ekomundi'),
+    'file' => "ekomundi.ajax.inc",
+    'type' => MENU_CALLBACK,
+  );
+  $items['ekomundi_ajax/auto'] = array(
+    'page callback' => 'ekomundi_autocomplete_response',
+    'access callback' => 'user_access',
+    'access arguments' => array('administer ekomundi'),
+    'file' => "ekomundi.ajax.inc",
+    'type' => MENU_CALLBACK,
+  );
+  $items['ekomundi_noajax'] = array(
+    'title' => 'Extra',
+    'description' => '...',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekomundi_config'),
+    'access callback' => 'user_access',
+    'access arguments' => array('administer ekomundi'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => "ekomundi.admin.inc",
+    'weight' => 10,
+  );
+/*
+  $items['node/%/mailing-members'] = array(
+    'title' => 'Mail to group members',
+    'page callback' => 'ekomundi_group_mailing',
+    'page arguments' => array('node', 1),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 4,
+    // 'access callback' => TRUE,
+    'access callback' => 'ekomundi_og_ui_user_access_group',
+    'access arguments' => array('access administration pages', 'node', 1),
+    //'context' => MENU_CONTEXT_PAGE | MENU_CONTEXT_INLINE,
+  );
+*/
+  return $items;
+}
+
+function ekomundi_og_ui_user_access_group($perm, $group_type, $gid){
+  return og_ui_user_access_group($perm, $group_type, $gid);
+
+}
+
+function ekomundi_group_mailing($group_type,$gid){
+  drupal_goto($group_type . '/' . $gid . '/mailing');
+}
+
+/**
+ * Implements hook_theme().
+ */
+function ekomundi_theme() {
+  return array(
+    'ekomundi_config' => array(
+      'render element' => 'form',
+      'file' => "ekomundi.admin.inc",
+    ),
+  );
+}
+/**
+ * Implements hook_block_info().
+ */
+function ekomundi_block_info() {
+  /*
+  $blocks['ekomundi_r1'] = array(
+    'info' => t('Block for R1'),
+  );
+  $blocks['ekomundi_r2'] = array(
+    'info' => t('Block for R2'),
+  );
+  $blocks['ekomundi_r3'] = array(
+    'info' => t('Block for R3'),
+  );
+  $blocks['ekomundi_menu_taxo'] = array(
+    'info' => t('Block Menu Taxo'),
+  )*/
+  $blocks['ekomundi_block_user'] = array(
+    'info' => t('Logged user'),
+  );
+  $blocks['ekomundi_og_pending_members'] = array(
+    'info' => t('Eko alerte membre en attente'),
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view($delta='').
+ */
+function ekomundi_block_view($delta=''){
+  global $user;
+  $user=user_load($user->uid);
+
+  $regions=array('r1','r2','r3');
+  $block=array();
+
+  drupal_add_library('system', 'drupal.ajax');
+  switch($delta) {
+    /*case 'ekomundi_r1':
+      $menu_ct=get_menu_content_type('r1');
+      //$ct=variable_get('eko_ct_r1');
+      $block['subject']=t('Choose your content type') ;
+      $block['content']=$menu_ct ;
+      break;
+    case 'ekomundi_menu_taxo':
+      $block['content']=drupal_get_form('ekomundi_menu_taxo') ;
+      break;
+    case 'ekomundi_r2':
+      //$menu_ct=get_menu_content_type('r1');
+      //$ct=variable_get('eko_ct_r1');
+      $block['subject']=t('node 1') ;
+      $node=node_load(1);
+      $block['content']=  node_view_multiple(array($node->nid => $node), 'ekopoint');
+      break;
+
+    case 'ekomundi_r3':
+        //Mini-panel name
+        $minipanel_name = 'test_mp_jo';
+        //global $page;
+        //drupal_http_request('node/1?ajax_request');
+        //dpm($page);
+        //$mp = panels_mini_block_view($minipanel_name);
+        //render the mini panel
+        //$output = panels_mini_panels_mini_content_type_render($minipanel_name, $conf, $panel_args, $context);
+        $page=drupal_http_request('http://127.0.0.1/ekomundi/node/1?ajax_request');
+        //dpm($page);
+        //$block['subject']=t('node 1') ; $node=node_load(1);
+        $block['content']= 'jo';        // $mp['content']; //$output->content;
+      break;*/
+    case 'ekomundi_block_user':
+      if($user->uid != 0 ){
+        $output = '<div id="logged-user-block" >';
+        $output .= '<div id="logged-img-user" >';
+        //var_dump($user->picture->uri);
+        if(isset($user->picture->uri) && $user->picture->uri !== NULL){
+          $output .=theme_image_style( array(
+            'style_name' => 'mini-thumbnail',
+            'height' => '25px',
+            'width' => '25px',
+            'path' => $user->picture->uri,
+            'attributes' => array(
+                'class' => 'avatar'
+            )
+          ));
+        }
+        else{
+          $output .=theme_image( array(
+                    'path' => drupal_get_path('theme','themeko').'/images/anonyme.png',
+                    'width' => '25px',
+                    'height' => '25px',
+                    'attributes' => array(
+                        'class' => 'avatar'
+                    )
+                )
+            );
+        }
+        $output .='</div>';
+        $output .= t('Logged as').' '. l($user->name,'user/'.$user->uid);
+        $output .= ' | ';
+        $output .= l( t( 'Log out' ) , 'user/logout' ) ;
+        $output .= '</div>';
+
+        $block['content'] = $output;
+      }
+        /*else{
+          $output .= l( t( 'Log in' ) , 'user/login' ) ;
+          $output .= ' | ';
+          $output .= l( t( 'Become a member' ) , 'user/register' ) ;
+        }*/
+      break;
+    case 'ekomundi_og_pending_members':
+      $output = '';
+      if($user->uid != 0 && arg(0) == 'node' && is_numeric(arg(1))){
+         $node = node_load(arg(1));
+         if(og_is_group('node',$node->nid) ){
+
+          if (og_user_access('node',$node->nid,'administer group') || og_user_access('node',$node->nid,'approve and deny subscription') ){
+            if(_og_are_pending_member($node->nid)){
+              $block['subject']=t('Membre en attente !!') ;
+              $output .= '<div class="messages warning">';
+              $output .= t('Ce groupe a des membres en attente de validation.' ).' '.l(t('Gérer les membres en attente'), 'group/node/'.$node->nid.'/admin/people') ;
+              $output .= '</div>';
+            }
+          }
+        }
+        $block['content'] = $output;
+        $block['content'] = $output;
+      }
+
+      break;
+  }
+  return $block;
+}
+
+function get_menu_content_type($region){
+  $cts=variable_get('eko_ct_'.$region);
+  $menu='';
+  if($cts) {
+    $menu.='<ul class="content-type-list">';
+    foreach($cts as $ct){
+      if($ct){
+        $menu.='<li>'. l(t($ct), 'ekomundi_ajax/nojs/'.$region.'/load/'.$ct, array('attributes' => array('class' => array('use-ajax') ) ) ).'</li>';
+      }
+    }
+    $menu.='</ul><div id="'.$region.'"></div>';
+  }
+
+  return $menu;
+}
+
+
+/**
+ * Implements hook_form_FORM_ID_alter() for the node form.
+ * /
+function ekomundi_form_node_form_alter(&$form, $form_state) {
+   //$form['#after_build'][] = '_ekomundi_form_node_form_alter';
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function ekomundi_form_projet_node_form_alter(&$form,&$form_state,$form_id){
+  global $user;
+  $user = user_load($user->uid);
+
+  $lang = $form['language']['#value'];
+
+  if($form['title']['#default_value'] == NULL){
+    $form['title']['#default_value'] = t('Intention de @user',array('@user' => $user->name));
+    $form['title_field'][$lang][0]['value']['#default_value'] = t('Intention de @user',array('@user' => $user->name));
+  }
+  //dpm($form);
+}
+
+function _ekomundi_form_node_form_alter($form, &$form_state) {
+  global $language;
+
+  $lang_options = array();
+  foreach (language_list() as $lang=> $object){
+    $lang_options[$lang]=$object->native;
+  }
+  //example_language_list returns an array in the form of ("en"=>"English") etc
+ $form['language']['#options'] = $lang_options;
+ $form['language']['#value'] = $language->language;
+ $form['language']['#default_value'] = $language->language;
+ return $form;
+}
+
+
+/**
+ * Implements hook_entity_update()
+ */
+function ekomundi_entity_update($entity, $type) {
+  if(isset($entity->field_name)){
+    switch($entity->field_name){
+      case 'field_col_ekopoint':
+        //dpm('ekomundi_entity_update');
+        //dpm($entity);
+        //field_col_ekoprop
+        if(isset($entity->original->field_col_ekoprop['und'])){
+          $before = $entity->original->field_col_ekoprop['und'];
+        }
+        else{$before=array();}
+
+        if(isset($entity->field_col_ekoprop['und']) ){
+          $after = $entity->field_col_ekoprop['und'];
+
+          if(sizeof($after) > sizeof($before) ) {
+            //dpm(array($after,$before));
+            $diffs = check_array_diff($after,$before);
+            //dpm($diffs);
+            foreach($diffs as $diff_item){
+
+              $fc = entity_load('field_collection_item', array($diff_item['value']));
+              $fc = $fc[$diff_item['value']];
+
+              //$nid_prop=$fc->field_node_ref_prop['und'][0]['nid'];
+              $nid_prop = $fc->{FIELD_REF_PROP_FC_EKOPROP}['und'][0]['target_id'];
+
+              //$nid_point=$entity->field_node_ref_ekopoint['und'][0]['nid'];
+              $nid_point = $entity->{FIELD_REF_POINT_FC_EKOPOINT}['und'][0]['target_id'];
+
+              $node_point = node_load($nid_point);
+              $delta = isset($node_point->{FIELD_REF_PROP_EKOPOINT}['und'])? sizeof($node_point->{FIELD_REF_PROP_EKOPOINT}['und']) : 0 ;
+
+              //$node_point->field_nid_propositions['und'][$delta]['nid']=$nid_prop;
+              $node_point->{FIELD_REF_PROP_EKOPOINT}['und'][$delta]['target_id'] = $nid_prop;
+
+              node_save($node_point);
+            }
+          }
+        }
+
+        break;
+
+    }
+  }
+
+}
+
+/*
+ * Implements hook_views_query_alter() {
+ */
+
+function ekomundi_views_query_alter(&$view, &$query) {
+
+  switch ($view->name){
+    case 'og_members':
+      //dpm($view->argument['og_group_ref_target_id']);
+      //$view->build_info['query']= "SELECT users.picture AS users_picture, users.uid AS uid, users.name AS users_name, users.mail AS users_mail
+      //    FROM users
+      //    LEFT JOIN og_membership ON users.uid = og_membership.etid
+      //    WHERE og_membership.gid = '1106' ";
+      break;
+    case 'og_content_tableau':
+
+      if ($view->current_display == 'panel_pane_3' && isset($_REQUEST[ 'sort-order' ]) ) {
+        unset($query->orderby);
+        $sort = $_REQUEST[ 'sort-order' ];
+        if ( $sort == 'nb_vote' ) {
+          $query->orderby[ 0 ] = array('field' => 'votingapi_cache_node_count_value', 'direction' => ' DESC');
+          $query->orderby[ 1 ] = array('field' => 'votingapi_cache_node_percent_average_value', 'direction' => ' DESC');
+          $query->orderby[ 2 ] = array('field' => ' field_data_field_voting.field_voting_rating', 'direction' => ' DESC');
+        }
+        if ( $sort == 'importance' ) {
+          $query->orderby[ 0 ] = array('field' => 'taxonomy_term_data_field_data_field_statut_weight', 'direction' => 'ASC');
+          $query->orderby[ 1 ] = array('field' => 'votingapi_cache_node_percent_average_value', 'direction' => ' DESC');
+          $query->orderby[ 2 ] = array('field' => ' field_data_field_voting.field_voting_rating', 'direction' => ' DESC');
+
+        }
+        else {
+          $query->orderby[ 0 ] = array('field' => 'votingapi_cache_node_percent_average_value', 'direction' => ' DESC');
+          $query->orderby[ 1 ] = array('field' => ' field_data_field_voting.field_voting_rating', 'direction' => ' DESC');
+        }
+        $view->query->orderby = $query->orderby;
+      }
+
+      break;
+    case 'og_content_entity_ref_view':
+      $node_type = '';
+      if(arg(0) == 'node'){
+        if(is_numeric(arg(1)  )){
+          $node = node_load(arg(1));
+          $node_type = $node->type;
+        }
+        elseif(arg(1) == 'add' && is_string(arg(2))){
+          $node_type = check_plain(arg(2));
+        }
+      }
+
+      if(!empty($node_type)){
+
+        $eko_types = variable_get('ekomundi_audience_'.$node_type, array());
+        foreach($query->where[1]['conditions'] as $delta => $conditions ){
+          if($conditions['field'] == 'node.type' ){
+            $value = array();
+            foreach($eko_types as $type){
+              if($type){
+               $value[] = $type;
+              }
+            }
+          }
+        }
+        dpm($query);
+      }
+
+      break;
+    case 'og_files':
+
+      foreach($query->where[0]['conditions'] as $delta => $conditions ){
+        if($conditions['field'] == 'og_membership_file_managed.gid' ){
+          $query->where[0]['conditions'][$delta]['field'] = 'og_membership_node.gid';
+        }
+      }
+      break;
+  }
+}
+
+/*
+ * Implements hook_views_post_execute() {
+ */
+
+function ekomundi_views_post_execute(&$view) {
+  global $user;
+
+  switch($view->name){
+    case 'og_calendar':
+      /*
+      //dpm($view->result);
+      $new_result=array();
+      //dpm($view->argument['gid']);
+      $group_content=_og_get_content_group($view->argument['gid']->argument);
+      foreach($group_content as $content_nid){
+        if(og_is_group('node',$content_nid)  ){
+
+          //$user_membership = og_get_membership('node',$content_nid,'user',$user->uid);
+
+          if(1){//$user_membership && $user_membership->state==1){
+
+            $contents=_og_get_content_group($content_nid);
+            if($contents){
+
+              foreach($contents as $content){
+                $node=node_load($content);
+                //og_user_access_entity('','node',$node)
+
+                if($node && node_access('view', $node)){
+                  $field_date = field_get_items('node', $node, 'field_date');
+                  $field_daterepete = field_get_items('node', $node, 'field_daterepete');
+                  if(!empty($field_date) || !empty($field_daterepete) ){
+                    $obj = new stdClass;
+                    $obj->node_title = $node->title;
+                    $obj->nid = $node->nid;
+                    $obj->node_created = $node->created;
+                    $obj->field_data_field_date_node_entity_type='node';
+                    $obj->field_data_field_daterepete_node_entity_type ='node';
+                    $obj->_field_data = array('nid' => array('entity_type'=>'node','entity'=> $node ) );
+                    $dates=array();
+                    foreach($field_date as $delta => $field){
+                      $output = field_view_value('node', $node, 'field_date', $field);
+                      $dates[$delta]=array('rendered'=> $output,'raw'=>$field);
+
+                    }
+                    $obj->field_field_date = $dates;
+                    $dates_r=array();
+                    foreach($field_daterepete as $delta => $field){
+                      $output = field_view_value('node', $node, 'field_daterepete', $field);
+                      $dates_r[$delta]=array('rendered'=> $output,'raw'=>$field);
+
+                    }
+                    $obj->field_field_daterepete = $dates_r;
+
+                    if(!isset($new_result[$obj->nid])){
+                      $new_result[$obj->nid]=$obj;
+                    }
+
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      foreach($view->result as $result){
+        if(isset($new_result[$result->nid])){
+          unset($new_result[$result->nid]);
+        }
+      }
+
+      $view->result=array_merge($view->result,$new_result);
+      */
+      break;
+    case 'propositions_des_enfants':
+
+      $propositions = array();
+      foreach($view->result as $node){
+        $props = _ekomundi_get_propositions_by_node($node->nid);
+        foreach ($props as $p){
+          if(!array_exists_in_array($propositions,'nid',$p['nid'])){
+            $propositions[] =  $p;
+          }
+        }
+      }
+
+      require_once DRUPAL_ROOT.'/sites/all/modules/ekomundi/includes/array-sorter.inc';
+      $sorter = new array_sorter($propositions,FIELD_POND);
+      $propositions = $sorter->sortit();
+
+      $prop_in_obj=array();
+      foreach($propositions as $proposition){
+        $prop_in_obj[] = (object) $proposition;
+      }
+      //dpm($prop_in_obj);
+      $view->result = $prop_in_obj ;
+      break;
+    case 'propostions_des_ekopoints':
+      //dpm($view->result);
+      if(arg(0) == 'node' && is_numeric(arg(1)) ){
+
+        $propositions = _ekomundi_get_propositions_by_node(arg(1));
+
+        //dpm($propositions);
+        require_once DRUPAL_ROOT.'/sites/all/modules/ekomundi/includes/array-sorter.inc';
+        $sorter = new array_sorter($propositions,'field_data_field_voting_field_voting_rating');
+        $propositions = $sorter->sortit();
+
+        $prop_in_obj=array();
+        foreach($propositions as $proposition){
+          $prop_in_obj[] = (object) $proposition;
+        }
+        //dpm($prop_in_obj);
+        $view->result = $prop_in_obj ;
+        //A TESTER !!
+        //$view->build_info['count_query'] = $query->countQuery();
+        //dpm($view);
+      }
+
+      break;
+
+    case 'noeud_des_ekopoints':
+      //dpm($view);
+      if( is_numeric($view->args[0]) ){
+        $node=node_load($view->args[0]);
+        if($node->type == 'ekopoint'){
+          $query = db_select('field_data_field_entity_ref_ekopoint', 'r');
+          $query->join('field_data_field_col_ekopoint', 'e', 'r.entity_id = e.field_col_ekopoint_value');
+          $query->join('node', 'n', 'e.entity_id = n.nid');
+          $query->fields('n',array('nid','created'));
+          $query->condition('r.field_entity_ref_ekopoint_target_id',$view->args[0]);
+          $result = $query->execute();
+          //dpq($query);
+          $view_res = array();
+          while($record = $result->fetchAssoc()){
+            //dpm($record);
+            if($record['nid'] != 'NULL'){
+              $obj = new stdClass;
+              $obj->node_created = $record['created'];
+              $obj->nid = $record['nid'];
+              $view_res[] = $obj;
+            }
+
+          }
+          $view->result = $view_res;
+        }
+      }
+      //dpm($view);
+      /*
+        SELECT eko.entity_id, node.nid,node.created FROM field_data_field_entity_ref_ekopoint ref
+LEFT JOIN field_data_field_col_ekopoint eko ON ref.entity_id= eko.field_col_ekopoint_value
+LEFT JOIN node ON eko.entity_id = node.nid
+WHERE ref.field_entity_ref_ekopoint_target_id = 2962 */
+      break;
+    case 'og_graph__':
+      //dpm($view->result);
+      $new_result=array();
+      //dpm($view->argument['gid']);
+      //$group_content=_og_get_content_group($view->argument['gid']->argument);
+      foreach($view->result as $data){
+        if(og_is_group('node',$data->nid)  ){
+          //dpm($data->nid . ' is_group');
+          //$user_membership = og_get_membership('node',$data->nid,'user',$user->uid);
+
+          if(1){//$user_membership && $user_membership->state==1){
+
+            $contents=_og_get_content_group($data->nid);
+            if($contents){
+              //dpm($contents);
+              foreach($contents as $content){
+                $node=node_load($content);
+                //og_user_access_entity('','node',$node)
+
+                if($node ){ //&& node_access('view', $node)){
+                  $og_group_ref = field_get_items('node', $node, 'og_group_ref');
+
+                  if(!empty($og_group_ref)  ){
+
+                    $obj = new stdClass;
+                    $obj->node_title = $node->title;
+                    $obj->nid = $node->nid;
+                    $obj->node_created = $node->created;
+                    $obj->field_data_og_group_ref_node_entity_type='node';
+                    $obj->_field_data = array('nid' => array('entity_type'=>'node','entity'=> $node ) );
+                    $og_ref=array();
+                    foreach($og_group_ref as $delta => $field){
+                      $output = field_view_value('node', $node, 'og_group_ref', $field);
+                      $field['entity'] = node_load($field['target_id']);
+                      $field['access'] = TRUE;
+
+                      $og_ref[$delta]=array('rendered'=> $output,'raw'=>$field);
+
+                    }
+                    $obj->field_og_group_ref = $og_ref;
+
+                    if(!isset($new_result[$obj->nid])){
+                      $new_result[$obj->nid]=$obj;
+                    }
+
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      foreach($view->result as $result){
+        if(isset($new_result[$result->nid])){
+          unset($new_result[$result->nid]);
+        }
+      }
+
+      $view->result=array_merge($view->result,$new_result);
+      //dpm($view->result);
+      break;
+    }
+}
+
+function array_unique_recusive($arr){
+  foreach($arr as $key=>$value)
+  if(gettype($value)=='array')
+      $arr[$key]=array_unique_recusive($value);
+  return array_unique($arr,SORT_REGULAR);
+}
+
+function array_exists_in_array($array, $key, $val) {
+    foreach ($array as $item)
+        if (isset($item[$key]) && $item[$key] == $val)
+            return true;
+    return false;
+}
+
+function _ekomundi_get_propositions_by_node($nid){
+  $node = node_load($nid);
+  $propositions = array();
+  if(isset($node->{FIELD_COL_EKOPOINT}['und'])){
+    foreach($node->{FIELD_COL_EKOPOINT}['und'] as $item_fc_point){
+
+      $fc_point = entity_load('field_collection_item', array($item_fc_point['value']));
+      $fc_point = isset($fc_point[$item_fc_point['value']]) ? $fc_point[$item_fc_point['value']] : '';
+
+      if(!empty($fc_point) && isset($fc_point->{FIELD_COL_EKOPROP}['und']) ){
+        foreach($fc_point->{FIELD_COL_EKOPROP}['und'] as $item_fc_prop){
+          $fc_prop = entity_load('field_collection_item', array($item_fc_prop['value']));
+          $fc_prop = $fc_prop[$item_fc_prop['value']];
+
+          if(isset($fc_prop->{FIELD_REF_PROP_FC_EKOPROP}['und'])){
+            $proposition = array();
+
+            //$proposition['nid'] = $fc_prop->{FIELD_REF_PROP_FC_EKOPROP}['und'][0]['nid'];
+            $proposition['nid'] = $fc_prop->{FIELD_REF_PROP_FC_EKOPROP}['und'][0]['target_id'];
+            $proposition[FIELD_POND] = $fc_prop->{FIELD_POND}['und'][0]['tid'];
+            $proposition['field_data_field_voting_field_voting_rating'] = isset($fc_prop->field_voting['und'][0]['average']) ? $fc_prop->field_voting['und'][0]['average'] : '';
+            $propositions[] = $proposition;
+          }
+        }
+      }
+    }
+  }
+  return $propositions;
+}
+
+/*
+ * Implements ekomundi_views_pre_render() {
+ */
+function ekomundi_views_pre_render(&$view) {
+  // Scramble the order of the rows shown on this result page.
+  // Note that this could be done earlier, but not later in the view execution
+  // process.
+  switch($view->name){
+    case 'og_graph':
+      //dpm('pre_render');
+      //dpm($view);
+    break;
+  }
+}
+
+/*
+ * Implements ekomundi_views_post_render() {
+ */
+function ekomundi_views_post_render(&$view, &$output, &$cache) {
+  // When using full pager, disable any time-based caching if there are less
+  // then 10 results.
+
+  switch($view->name){
+    case 'og_graph':
+    //case 'taxo_graph':
+      //dpm('post_render');
+      //dpm($view);
+      //dpm($output);
+    break;
+  }
+}
+/**
+ * Implements hook_node_view($node, $view_mode, $langcode) {
+ */
+
+function ekomundi_node_view($node, $view_mode, $langcode) {
+  global $user;  //dpm($node->content['links']);
+  if(og_is_group('node',$node->nid) && $view_mode=='full'){
+
+    if (og_user_access('node',$node->nid,'administer group') || og_user_access('node',$node->nid,'approve and deny subscription') ){
+      if(_og_are_pending_member($node->nid)){
+        //drupal_set_message(t('Ce groupe a des membres en attente de validation.' ).' '.l(t('Gérer les membres en attente'), 'group/node/'.$node->nid.'/admin/people') ,'warning');
+      }
+    }
+  }
+
+
+  if($view_mode=='full'){
+    switch($node->type){
+      case 'carte_mentale':
+
+
+        dpm($node);
+        break;
+      case 'projet':
+      case 'groupe-de-travail':
+      case 'organisme':
+      case 'activite':
+        /*$propostions = array();
+        if(isset($node->{FIELD_COL_EKOPOINT}['und'])){
+          foreach($node->{FIELD_COL_EKOPOINT}['und'] as $item_fc_point){
+            $fc_point = entity_load('field_collection_item', array($item_fc_point['value']));
+            $fc_point = $fc_point[$item_fc_point['value']];
+
+            if(isset($fc_point->{FIELD_COL_EKOPROP}['und'])){
+              foreach($fc_point->{FIELD_COL_EKOPROP}['und'] as $item_fc_prop){
+                $fc_prop = entity_load('field_collection_item', array($item_fc_prop['value']));
+                $fc_prop = $fc_prop[$item_fc_prop['value']];
+                $proposition = array();
+                if(isset($fc_prop->{FIELD_REF_PROP_FC_EKOPROP}['und'])){
+                  $proposition['nid'] = $fc_prop->{FIELD_REF_PROP_FC_EKOPROP}['und'][0]['target_id'];
+                  $proposition['field_data_field_voting_field_voting_rating'] = $fc_prop->field_voting['und'][0]['average'];
+                }
+                $propositions[] = $proposition;
+              }
+            }
+
+          }
+        }
+
+        require_once DRUPAL_ROOT.'/sites/all/modules/ekomundi/includes/array-sorter.inc';
+        $sorter = new array_sorter($propositions,'field_data_field_voting_field_voting_rating');
+        $propositions = $sorter->sortit();
+
+        //$view->result = $propostions ;
+
+        //dpm($propositions);
+        */
+      case 'article':
+      case 'oeuvre':
+      case 'action':
+        /**
+         * BREADCRUMB
+         */
+        $breadcrumb = array();
+        $breadcrumb[] = l(t('Home'), '<front>');
+
+        $group_hiearchie=array();
+        _og_get_hierarchie($node->nid,$group_hiearchie);
+
+        $group_hiearchie=array_reverse($group_hiearchie);
+        //$node=node_load($context['args'][0]);
+        $node_title=$node->title;
+
+        foreach($group_hiearchie as $level=> $gids){
+          $node=node_load($gids[0]);
+          $breadcrumb[] = l($node->title, 'node/'.$node->nid);
+        }
+        $breadcrumb[] = $node_title;
+        // Set Breadcrumbs
+        drupal_set_breadcrumb($breadcrumb);
+
+        break;
+    }
+  }
+  if($user->uid == 1 && $node->nid == '2766'){
+    $group_hiearchie=array();
+    $group_hiearchie = og_get_hierarchy('node',$node->nid);
+    //dpm($group_hiearchie);
+
+    $dump = '';
+    recursive_dump($group_hiearchie, $dump);
+    //dpm($dump);
+
+  }
+
+}
+
+function recursive_dump(&$array, &$dump, $curlevel=0) {
+
+	foreach ($array as $id=>$class) {
+
+	  if (isset($class->children)) {
+      $node = node_load($id);
+      $dump .= str_repeat(' ',$curlevel).'<node ID="' .$id .'" TEXT="'.$node->title.'">'."\n";
+      recursive_dump($class->children, $dump, $curlevel+1);
+      $dump .= str_repeat(' ',$curlevel).'<site URL="http://92.243.17.64:1764/graphmind" BASEPATH="http://92.243.17.64:1764/" ENDPOINT="graphmind" />';
+      $dump .= str_repeat(' ',$curlevel).'</node>'."\n";
+	  }
+    else {
+      if(!isset($class->name)){
+        $node = node_load($id);
+        $class->name = $node->title;
+      }
+      $dump .= str_repeat(' ',$curlevel) . '<node ID="' .$id .'" TEXT="'.$class->name.'"/>
+      <site URL="http://92.243.17.64:1764/graphmind" BASEPATH="http://92.243.17.64:1764/" ENDPOINT="graphmind" />
+      </node>'."\n";
+    }
+
+	}
+
+}
+
+
+
+/**
+ * Implements hook_panels_pre_render().
+ */
+function ekomundi_panels_pre_render(&$display,$renderer){
+  global $user;
+  if($user->uid == 1) {
+    //dpm(array($display,$renderer));
+
+    //panels_flexible_render_item($renderer, $item, $display->content['2157'], 2157, $position, $max);
+  }
+}
+
+/**
+ * Implements hook_ctools_render_alter().
+ *
+ * When a Page Manager page is rendered, set the breadcrumb
+ */
+function ekomundi_ctools_render_alter($info, $page, $context) {
+  global $user;
+
+  $alter_breadcrumb = array(
+    'node/%nid',
+    'node/%nid/dashboard',
+  );
+
+  if(arg(0)=='node' && is_numeric(arg(1) ) ){
+    //if($user->uid == 1) {dpm($info);}
+    // Build Breadcrumbs
+    $breadcrumb = array();
+    $breadcrumb[] = l(t('Home'), '<front>');
+    if(isset($context['args']) && isset($context['args'][0])){
+      $group_hiearchie=array();
+      _og_get_hierarchie($context['args'][0],$group_hiearchie);
+
+      $group_hiearchie=array_reverse($group_hiearchie);
+      //if($user->uid == 1) {dpm($group_hiearchie);}
+
+      foreach($group_hiearchie as $level=> $gids){
+        $node=node_load($gids[0]);
+
+        //$user_membership = og_get_membership('node',$node->nid,'user',$user->uid);
+        $breadcrumb[$node->nid] = l($node->title, 'node/'.$node->nid.'');
+
+        /*
+        if($user_membership && $user_membership->state==1){
+          $breadcrumb[$node->nid] = l($node->title, 'node/'.$node->nid.'/dashboard/');
+        }
+        else{
+          $breadcrumb[$node->nid] = l($node->title, 'node/'.$node->nid);
+        }*/
+
+      }
+      //dpm($breadcrumb);
+      $node=node_load($context['args'][0]);
+      $breadcrumb[] = $node->title;
+      // Set Breadcrumbs
+      drupal_set_breadcrumb($breadcrumb);
+    }
+  }
+}
+
+
+function _og_get_hierarchie($nid,&$gids,$level=0){
+
+  $level++;
+  $group=og_get_entity_groups('node',$nid);
+  if(isset($group['node'])){
+    foreach($group['node'] as $id => $etid){
+      $gids[$level][]=$etid;
+      _og_get_hierarchie($etid,$gids,$level);
+    }
+  }
+}
+
+function _og_are_pending_member($gid){
+  $query=db_select('og_membership','m')
+    ->fields('m',array('etid'))
+    ->condition('m.entity_type','user','=')
+    ->condition('m.gid',$gid,'=')
+    ->condition('m.state',2,'=')
+    ->execute()->fetchAssoc();
+
+  if($query){
+    return true;
+  }
+  return false;
+}
+
+function _og_get_content_group($gid){
+  $query=db_select('og_membership','m')
+    ->fields('m',array('etid'))
+    ->condition('m.entity_type','node','=')
+    ->condition('m.gid',$gid,'=')
+    ->condition('m.state',1,'=')
+    ->execute();
+
+
+  $return=array();
+  while($res= $query->fetchAssoc()){
+    $return[]=$res['etid'];
+  }
+  if(count($return)>0){
+    return $return;
+  }
+  return false;
+}
+
+
+/**
+ * Implement hook_panels_pane_content_alter()
+ * Alter some fields in content pane
+ */
+function ekomundi_panels_pane_content_alter(&$content, $pane, $args, $context){
+  global $user;
+  if(isset($content) && isset($content->subtype) ){
+    /*if($content->subtype=='node_title'){
+      $node_type = $context['argument_entity_id:node_1']->data->type;
+      if (module_exists('color')) {
+        $pane->css[] = colors_get_colors('colors_node_type_'.$node_type );
+      }
+
+    }*/
+    //if($user->uid == 1) {dpm($content);}
+    if($content->subtype=='node:group_content_access'){
+
+      foreach($content->content['#items'] as $delta => $item){
+        if(isset($item['value'])){
+          if($item['value']==0 || $item['value']==1){
+            $img = array(
+            'path' => drupal_get_path('theme','themeko').'/images/open_content.png',
+            'alt' => t('Contenu visible seulement par tous les membres du site'),
+            'title'=> t('Contenu visible seulement par tous les membres du site'),
+            'attributes' => array('class' => 'private-group-content-access'),
+            );
+            $content->content[$delta]['#markup']=theme('image', $img);
+          }
+          if($item['value']==2){
+            $img = array(
+            'path' => drupal_get_path('theme','themeko').'/images/private_content.png',
+            'alt' => t('Contenu visible seulement par les membres du groupe'),
+            'title'=> t('Contenu visible seulement par les membres du groupe'),
+            'attributes' => array('class' => 'private-group-content-access'),
+            );
+            $content->content[$delta]['#markup']=theme('image', $img);
+          }
+        }
+
+      }
+
+    }
+    if($content->subtype=='node:group_access'){
+
+      foreach($content->content['#items'] as $delta => $item){
+        if(isset($item['value'])){
+          if($item['value']==0 ){
+            $img = array(
+            'path' => drupal_get_path('theme','themeko').'/images/open_group.png',
+            'alt' => t('Groupe visible par tous'),
+            'title'=> t('Groupe visible par tous'),
+            );
+            $content->content[$delta]['#markup']=theme('image', $img);
+          }
+          if($item['value']==1){
+            $img = array(
+            'path' => drupal_get_path('theme','themeko').'/images/private_group.png',
+            'alt' => t('Groupe visible seulement par les membres du groupe'),
+            'title'=> t('Groupe visible seulement par les membres du groupe'),
+            );
+            $content->content[$delta]['#markup']=theme('image', $img);
+          }
+        }
+      }
+    }
+    if($content->subtype=='node:group_group' ){
+       //dpm($content->content);
+      if(isset($content->content[0]['#title']['#href'] )){
+        // $content->content[0]['#options']=array('class'=>array('button'));
+        if( $content->content[0]['#title']== t('Subscribe to group') || $content->content[0]['#title']== t('Demander un abonnement au groupe')) {
+          $content->content[0]['#title']=t('Join the group');
+        }
+        if( $content->content[0]['#title']== t('Unsubscribe from group')) {
+          $content->content[0]['#title']=t('Quit the group');
+        }
+      }
+      // dpm($content->content);
+    }
+  }
+}
+
+/*
+function ekomundi_preprocess_field(&$variables) {
+  // @todo Remove in 7.x-2.1.
+  if (!function_exists('colors_include_api')) {
+    return;
+  }
+  if($variables['element']['#field_name']=='title'){
+    dpm('ekomundi_preprocess_field');
+  // @todo D8: Remove weight once http://drupal.org/node/1388546 is fixed.
+  $variables['element']['#attached']['css'][colors_create_css('ekomundi_colors')] = array('weight' => 1);
+  }
+}
+*/
+/**
+ * Implements hook_colors_rebuild().
+ */
+function ekomundi_colors_rebuild() {
+  return TRUE;
+}
+
+/**
+ * Implements hook_colors_build_selector().
+ */
+function ekomundi_colors_build_selector($class) {
+  $selector = array(
+    "h1.$class a",
+    "h1.$class",
+    "h2.$class a",
+    "h2.$class",
+    "h3.$class a",
+    "h3.$class",
+    "h4.$class a",
+    "h4.$class",
+    "h5.$class a",
+    "h5.$class",
+    "h6.$class a",
+    "h6.$class",
+  );
+  return implode(', ', $selector);
+}
+function ekomundi_colors_get_color_mapping() {
+  return array(
+    'text' => 'background-color',
+    'background' => 'color',
+    'border' => 'border-color',
+  );
+}
+
+
+function ekomundi_form_field_collection_item_form_alter(&$form, &$form_state, $form_id) {
+  $item = $form_state['field_collection_item'];
+  if (!isset($item->is_new)) {
+    drupal_set_title(
+      t(
+        'Edit @label for @bundle %title',
+        array(
+          '@label' => $item->label(),
+          '@bundle' => $item->hostEntityBundle(),
+          '%title' => $item->hostEntity()->title,
+        )
+      ),
+      PASS_THROUGH
+    );
+  }
+  else {
+    drupal_set_title(
+      t(
+        'Add new @fc_type to @bundle %title',
+        array(
+          '@fc_type' => $item->translatedInstanceLabel(),
+          '@bundle' => $item->hostEntityBundle(),
+          '%title' => $item->hostEntity()->title,
+        )
+      ),
+      PASS_THROUGH
+    );
+  }
+}

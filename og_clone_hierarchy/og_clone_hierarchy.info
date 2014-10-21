@@ -1,0 +1,8 @@
+name = OG Clone hierarchy
+description = BY JO ! Clone all the group content of a particular node to a group.
+package = "Organic groups"
+version = 7.x-1.x-dev
+core = 7.x
+dependencies[] = og
+dependencies[] = og_hierarchy
+

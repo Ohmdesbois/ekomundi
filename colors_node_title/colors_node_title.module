@@ -1,0 +1,50 @@
+<?php
+
+/**
+ * Implements hook_colors_api().
+ */
+function colors_node_title_colors_api() {
+  return array(
+    'api' => colors_api_version(),
+    'path' => drupal_get_path('module', 'colors_node_title') . '/includes',
+  );
+}
+
+/**
+ * Implements hook_colors_rebuild().
+ */
+function colors_node_title_colors_rebuild() {
+  return TRUE;
+}
+
+/**
+ * Implements hook_colors_build_selector().
+ */
+function colors_node_title_colors_build_selector($class) {
+  $selector = array(
+    "h1.$class a",
+    "h1.$class",
+    "h2.$class a",
+    "h2.$class",
+    "h3.$class a",
+    "h3.$class",
+    "h4.$class a",
+    "h4.$class",
+    "h5.$class a",
+    "h5.$class",
+    "h6.$class a",
+    "h6.$class",
+  );
+  return implode(', ', $selector);
+}
+
+/**
+ * Implements hook_colors_get_color_mapping().
+ */
+function colors_node_title_colors_get_color_mapping() {
+  return array(
+    'text' => 'background-color',
+    'background' => 'color',
+    'border' => FALSE,
+  );
+}

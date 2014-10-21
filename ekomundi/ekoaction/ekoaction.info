@@ -1,0 +1,5 @@
+name = Eko action
+description = Crée la field collection ekopoint avec tous les objet
+package = Ekomundi modules
+core = 7.x
+files[] = ekoaction.module

@@ -1,0 +1,255 @@
+<?php
+
+/**
+ * Implements hook_FORM_ID_form_alter().
+ * Adds an instance option for making node fields editable by comment editable
+ */
+function cne_form_field_ui_field_edit_form_alter(&$form, $form_state, $form_id) {
+  $form['instance']['comment_enabled'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Editable by comments'),
+    '#description' => t('If checked, commenters will be able to edit the node when commenting.'),
+    '#default_value' => isset($form['#instance']['comment_enabled']) ? $form['#instance']['comment_enabled'] : FALSE,
+    '#weight' => $form['instance']['label']['#weight'] + 1,
+  );
+
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ * If user has commenting permissions, load the fields from the node and insert them into this form. Then unset any that are not "editable by comment"
+ */
+
+function cne_form_comment_form_alter(&$form, &$form_state) {
+
+  $node = $form['#node'];
+
+  //Check to see if it's a new comment (CID should be null), that user has 'post comments' permission, that commenting is open.
+  if (is_null ($form['cid']['#value']) &&
+    node_access('update', $node) &&
+    user_access('post comments') &&
+    $node->comment == COMMENT_NODE_OPEN &&
+    (variable_get('comment_form_location_' . $node->type, COMMENT_FORM_BELOW) == COMMENT_FORM_BELOW)) {
+    //Attach the node's fields
+    field_attach_form('node', $node, $form, $form_state, $node->language);
+
+    //Get the weight of the author field
+    $weight = $form['author']['#weight']-1;
+    //dpm(field_info_instances('node', $form['#bundle']));
+    
+    //Loop through the field instances
+    foreach (field_info_instances('node', $form['#bundle']) as $fieldname => $field_instance) {
+      //Check if the field is editable by comment
+      if (!isset ($field_instance['comment_enabled']) || $field_instance['comment_enabled'] == 0) {
+        unset($form[$fieldname]);
+      }
+      else{
+        //place the field above the comment
+        $weight--;
+        $form[$fieldname]['#weight'] = $weight;
+      }
+    }
+
+    //Add the submit and validate handlers
+    array_push($form['#validate'], "cne_form_validate");
+
+    //overide the comment_form_submit to save the node before the comment
+    $form['#submit']=array("cne_form_submit");
+
+    //TODO : make it work if fields are in fieldset
+    $form['#group_children'] = array();
+
+  }
+}
+
+/**
+ * Validates added fields
+ */
+function cne_form_validate($form, &$form_state) {
+  global $user;
+
+  entity_form_field_validate('comment', $form, $form_state);
+
+  if (!empty($form_state['values']['cid'])) {
+    // Verify the name in case it is being changed from being anonymous.
+    $account = user_load_by_name($form_state['values']['name']);
+    $form_state['values']['uid'] = $account ? $account->uid : 0;
+
+    if ($form_state['values']['date'] && strtotime($form_state['values']['date']) === FALSE) {
+      form_set_error('date', t('You have to specify a valid date.'));
+    }
+    if ($form_state['values']['name'] && !$form_state['values']['is_anonymous'] && !$account) {
+      form_set_error('name', t('You have to specify a valid author.'));
+    }
+  }
+  elseif ($form_state['values']['is_anonymous']) {
+    // Validate anonymous comment author fields (if given). If the (original)
+    // author of this comment was an anonymous user, verify that no registered
+    // user with this name exists.
+    if ($form_state['values']['name']) {
+      $query = db_select('users', 'u');
+      $query->addField('u', 'uid', 'uid');
+      $taken = $query
+        ->condition('name', db_like($form_state['values']['name']), 'LIKE')
+        ->countQuery()
+        ->execute()
+        ->fetchField();
+      if ($taken) {
+        form_set_error('name', t('The name you used belongs to a registered user.'));
+      }
+    }
+  }
+  if ($form_state['values']['mail'] && !valid_email_address($form_state['values']['mail'])) {
+    form_set_error('mail', t('The e-mail address you specified is not valid.'));
+  }
+  if ($form_state['values']['homepage'] && !valid_url($form_state['values']['homepage'], TRUE)) {
+    form_set_error('homepage', t('The URL of your homepage is not valid. Remember that it must be fully qualified, i.e. of the form <code>http://example.com/directory</code>.'));
+  }
+}
+
+
+/**
+ * Submits and saves added fields
+ */
+function cne_form_submit($form, &$form_state) {
+  //get fields
+  field_attach_submit('node', $form['#node'], $form, $form_state);
+  //get the the node
+  $node = $form['#node'];
+  //make a new revision
+  $node->revision = 1;
+  $node->log = t("updated by " . $form['author']['_author']['#markup'] . " via comment");
+
+  if(module_exists('title')){
+    $node->title = $node->title_field[$node->language][0]['value'];
+  }
+  node_save($node);
+  $form_state['values']['nid'] = isset($form_state['values']['nid']) ? $form_state['values']['nid'] : $node->nid;
+  $node = node_load($form_state['values']['nid']);
+
+  //Loop through the field instances to delete fields of node 
+  foreach (field_info_instances('node', $form['#bundle']) as $fieldname => $field_instance) {
+    //Check if the field is editable by comment
+    if (isset ($field_instance['comment_enabled'])  && $field_instance['comment_enabled'] == 1) {
+      unset($form_state['values'][$fieldname]);
+    }
+  }
+  
+  $comment = comment_form_submit_build_comment($form, $form_state);
+
+  if (user_access('post comments') && (user_access('administer comments') || $node->comment == COMMENT_NODE_OPEN)) {
+    // Save the anonymous user information to a cookie for reuse.
+    if (user_is_anonymous()) {
+      user_cookie_save(array_intersect_key($form_state['values'], array_flip(array('name', 'mail', 'homepage'))));
+    }
+ 
+    comment_save($comment);
+    $form_state['values']['cid'] = $comment->cid;
+
+    // Add an entry to the watchdog log.
+    watchdog('content', 'Comment posted: %subject.', array('%subject' => $comment->subject), WATCHDOG_NOTICE, l(t('view'), 'comment/' . $comment->cid, array('fragment' => 'comment-' . $comment->cid)));
+
+    // Explain the approval queue if necessary.
+    if ($comment->status == COMMENT_NOT_PUBLISHED) {
+      if (!user_access('administer comments')) {
+        drupal_set_message(t('Your comment has been queued for review by site administrators and will be published after approval.'));
+      }
+    }
+    else {
+      drupal_set_message(t('Your comment has been posted.'));
+    }
+    $query = array();
+    // Find the current display page for this comment.
+    $page = comment_get_display_page($comment->cid, $node->type);
+    if ($page > 0) {
+      $query['page'] = $page;
+    }
+
+    // Redirect to the newly posted comment.
+    $redirect = array('node/' . $node->nid, array(
+        'query' => $query,
+        'fragment' => 'comment-' . $comment->cid,
+      ));
+  }
+  else {
+    watchdog('content', 'Comment: unauthorized comment submitted or comment submitted to a closed post %subject.', array('%subject' => $comment->subject), WATCHDOG_WARNING);
+    drupal_set_message(t('Comment: unauthorized comment submitted or comment submitted to a closed post %subject.', array('%subject' => $comment->subject)), 'error');
+    // Redirect the user to the node they are commenting on.
+    $redirect = 'node/' . $node->nid;
+  }
+  $form_state['redirect'] = $redirect;
+  // Clear the block and page caches so that anonymous users see the comment
+  // they have posted.
+  cache_clear_all();
+
+  drupal_set_message($form['#node']->title . ' updated by ' . $form['author']['_author']['#markup'] . ' via comment');
+  
+}
+
+/**
+ * Implements hook_comment_insert().
+ */
+function cne_comment_insert($comment) {
+  $node = node_load($comment->nid);
+
+  $revisions = node_revision_list($node);
+  next($revisions);
+
+  if ($preview_key = key($revisions)) {
+    $preview_revision = $revisions[$preview_key];
+    $old_node = node_load($node->nid, $preview_revision->vid);
+  }
+  else{
+    $old_node = node_load($node->nid, $node->vid);
+  }
+  if (!$diff_field_name = node_revision_diff_field_get_field_name('comment_node_' . $node->type)) {
+    return;
+  }
+
+  $unchanged = $old_node;
+  
+  $items = array();
+  foreach (field_info_instances('node', $node->type) as $field_name => $instance) {
+    $field = field_info_field($field_name);
+    $field_language = $field['translatable'] ? $node->language : 'und';
+    $old_value = empty($unchanged->{$field_name}[$field_language]) ? NULL : $unchanged->{$field_name}[$field_language];
+    $new_value = empty($node->{$field_name}[$field_language]) ? NULL : $node->{$field_name}[$field_language];
+
+    $same = empty($old_value) == empty($new_value);
+    if ($same && !empty($old_value)) {
+      $old_deltas = array_keys($old_value);
+      $new_deltas = array_keys($new_value);
+      $same = !array_diff($old_deltas, $new_deltas) && !array_diff($new_deltas, $old_deltas);
+      if ($same) {
+        $columns = array_keys($field['columns']);
+        foreach ($old_value as $delta => $old_items) {
+          foreach ($columns as $column) {
+            $set = isset($old_items[$column]);
+            if (($set != isset($new_value[$delta][$column])) || ($set && $old_items[$column] != $new_value[$delta][$column])) {
+              $same = FALSE;
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (!$same && $instance['comment_enabled'] == 1) {
+      $item = array('field_name' => $field_name);
+      if ($field['type'] == 'text_long' || $field['type'] == 'text_with_summary') {
+        $item['old_value'] = $unchanged->vid;
+        $item['new_value'] = $node->vid;
+      }
+      else {
+        $item['old_value'] = serialize($old_value);
+        $item['new_value'] = serialize($new_value);
+      }
+      $items[] = $item;
+    }
+  }
+  if ($items || !empty($node->log)) {
+	if (sizeof($items) >= 1 ){
+	  $comment->{$diff_field_name}[LANGUAGE_NONE] = $items;
+	}
+    comment_save($comment);
+  }
+}

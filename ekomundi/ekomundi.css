@@ -1,0 +1,28 @@
+.checkbox_add_nid_to{float:left}
+
+.node_actions a {float:left;color : red; margin : 5px}
+.node_actions  {float:right;color : red;margin-right : 35px}
+
+.node h2{
+	margin: 0 0 0.5em;
+    padding: 2em 0 0;
+}
+
+
+/* ********************************
+*
+*			EKO_ACTION
+*
+************************************/
+.select_block_action { width:180px }
+
+ .checkbox_add_nid_to div input{float:left;display:block;margin-right:3px}
+.checkbox_add_nid_to div label{display:inherit}
+
+.hide-exposed-filter{display:none}
+
+#fieldset_search_proposition {
+  width:40%;
+  float:left;
+  margin-right:20px;
+}

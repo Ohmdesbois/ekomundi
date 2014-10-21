@@ -1,0 +1,169 @@
+<?php
+
+/**
+ * Implements hook_permission().
+ */
+function term_dependency_permission() {
+  
+  $permissions = array(
+    'administer term dependency' => array(
+      'title' => t('Administer term dependency'),
+      'description' => t('Configure terms dependency'),
+    ),
+  );
+  
+  return $permissions;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function term_dependency_menu() {
+  $items = array();
+  $items['admin/config/content/termdependency'] = array(
+    'title' => t('Term dependency'),
+    'description' => t('Configure content types available for term dependency'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('term_dependency_settings_page'),
+    'access arguments' => array('administer term dependency'),
+    'file' => 'term_dependency.admin.inc',
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function term_dependency_form_taxonomy_form_term_alter(&$form, $form_state) {
+  $td_vocabularies = variable_get('term_dependency_vocabularies', array());
+  
+  if($td_vocabularies[$form['#vocabulary']->vid]){
+    $form['term_dependency'] = array(
+      '#type' => 'fieldset',
+      '#tree' => TRUE,
+      '#title' => t('Term dependency'),
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+      '#access' => user_access('administer term dependency') || xmlsitemap_link_bundle_access($bundle_info),
+      '#group' => 'additional_settings',
+    );
+    $all_types = node_type_get_types();
+    
+    $td_types = variable_get('term_dependency_content_types', array());
+    ksort($td_types);
+    foreach ($td_types as $type) {
+      if($type){
+        $form['term_dependency'][$type] = array(
+          '#type' => 'textfield',
+          '#title' => t($all_types[$type]->name),
+          '#default_value' => variable_get('term_dependency_' . $type . '_' . $form['tid']['#value']),
+          '#size' => 30,
+          '#maxlength' => 128,    
+        );      
+      }
+    }
+    // Add the submit handler to adjust the default values if selected.
+    $form['#submit'][] = 'term_dependency_form_term_submit';
+  }
+}
+
+function term_dependency_form_term_submit($form, &$form_state) {
+  $values = $form_state['values']['term_dependency'];
+  
+  foreach($values as $type=> $value){
+    if(!empty($value)){
+      variable_set('term_dependency_' . $type . '_' . $form_state['values']['tid'], check_plain($value));
+    }
+  }
+  
+}
+
+/**
+ * Implements hook_taxonomy_term_view().
+ */
+function term_dependency_taxonomy_term_view($term, $view_mode, $langcode) {
+  dpm($term);
+}
+
+function term_dependency_taxonomy_term_view_alter(&$build) {
+ dpm($build);
+}
+
+/**
+ * Implements hook_form_alter().
+ * /
+function term_dependency_form_alter(&$form, &$form_state, $form_id) {
+  global $user;
+  
+  if (strpos($form_id, '_node_form') !== FALSE && isset($form['#node']) ) {
+    
+    $node_type = $form['#node']->type;
+    $td_vocabularies = variable_get('term_dependency_vocabularies', array());
+    $td_types = variable_get('term_dependency_content_types', array());
+
+    if($td_types[$node_type] ){
+      
+      $fields_info = field_info_instances('node', $node_type);
+      foreach ($fields_info as $field_name => $value) {
+        $field_info = field_info_field($field_name);
+        
+        if($field_info['module'] == 'taxonomy'){
+          $taxo_ref_voc = $field_info['settings']['allowed_values'][0]['vocabulary'];  
+          
+          $voc = taxonomy_vocabulary_machine_name_load($taxo_ref_voc);
+          if($td_vocabularies[$voc->vid]){
+            $options = $form[$field_info['field_name']]['und']['#options'];
+            foreach($options as $tid => $value){
+              $options[$tid] = variable_get('term_dependency_' . $node_type . '_' . $tid, $value );
+            }
+            $form[$field_info['field_name']]['und']['#options'] = $options;
+          }
+        }
+      }  
+    }
+    
+      
+  } 
+}
+
+
+/**
+ * Override or insert vars into the field template.
+ */
+function term_dependency_preprocess_field(&$vars) {
+  $element = $vars['element'];
+  
+  $td_vocabularies = variable_get('term_dependency_vocabularies', array());
+  $td_types = variable_get('term_dependency_content_types', array());
+ 
+  if($element['#entity_type'] == 'node'){
+    $node_type = $element['#bundle'];
+    if($td_types[$node_type] ){
+      
+      $fields_info = field_info_instances('node', $node_type);
+      foreach ($fields_info as $field_name => $value) {
+        $field_info = field_info_field($field_name);
+        
+        if($field_info['module'] == 'taxonomy'){
+          
+          $taxo_ref_voc = $field_info['settings']['allowed_values'][0]['vocabulary'];  
+          
+          
+          $voc = taxonomy_vocabulary_machine_name_load($taxo_ref_voc);
+          if($td_vocabularies[$voc->vid] && $element['#field_name'] == $field_info['field_name']){
+            foreach($vars['items'] as $delta => $item){
+              
+              $tid = $item['#options']['entity']->tid;
+              $name = $item['#options']['entity']->name;
+              $new_name = variable_get('term_dependency_' . $node_type . '_' . $tid, $item['#options']['entity']->name );
+              
+              $vars['items'][$delta]['#title'] = str_replace($name, $new_name,$item['#title']); ;
+              //dpm($item);
+            }
+          }
+          
+        }
+      }  
+    }    
+  }
+}

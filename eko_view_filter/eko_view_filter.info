@@ -1,0 +1,4 @@
+name = Ekomundi View Filter
+description = Better view filter for the taxonomy action
+package = Ekomundi modules
+core = 7.x

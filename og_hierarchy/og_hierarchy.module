@@ -1,0 +1,190 @@
+<?php
+
+/**
+ * @file
+ * Save the Audience hierarchy in a table
+ */
+
+/**
+ * Implements hook_views_api().
+ */
+function og_hierarchy_views_api() {
+  return array(
+    'api' => 3.0,
+    'path' => drupal_get_path('module', 'og_hierarchy') . '/views',
+  );
+}
+
+/**
+ * Implements hook_entity_insert().
+ * /
+function og_hierarchy_entity_insert($entity, $entity_type) {
+  global $user;
+  if($user->uid == 1){
+
+
+  if($entity_type = 'og_membership' && $entity->entity_type == 'node'){
+    dpm('og_hierarchy_entity_insert');
+    dpm($entity);
+
+
+    db_insert('og_hierarchy')
+    ->fields(array(
+      'nid' => $entity->etid,
+      'parent' => $entity->gid,
+      ))
+      ->execute();
+  }
+
+
+
+  }
+}
+
+
+/**
+ * Implements hook_entity_update().
+ * /
+function og_hierarchy_entity_update($entity, $entity_type) {
+  global $user;
+  if($user->uid == 1){
+    if($entity_type = 'og_membership'){
+      dpm('og_hierarchy_entity_update');
+      dpm($entity);
+
+    }
+  }
+
+}
+
+
+/**
+ * Implements hook_entity_delete().
+ * /
+function og_hierarchy_entity_delete($entity, $entity_type) {
+  global $user;
+  if($user->uid == 1){
+
+
+
+  if($entity_type = 'og_membership' && $entity->entity_type == 'node'){
+    dpm('og_hierarchy_entity_delete');
+    dpm($entity);
+
+    db_delete('og_hierarchy')
+      ->condition('nid', $entity->etid)
+      ->condition('parent', $entity->gid)
+      ->execute();
+
+  }
+
+
+
+  }
+}
+*/
+
+/**
+ * Get hierarchy tree.
+ *
+ * @param $entity_type
+ * @param $etid
+ * @param $options
+ */
+function og_get_hierarchy($entity_type, $etid, $options = array(), &$tree = array(), $depth = 0) {
+  $options += array(
+    'direction' => 'children',
+    'nested' => TRUE,
+    'sanitize' => TRUE,
+    'entities_allowed' => array('node'),
+    'bundles_allowed' => array(),
+    'etids_allowed' => array(),
+    'ids_allowed' => array(),
+  );
+
+  if ($options['etids_allowed'] && !in_array($etid, $options['etids_allowed'])) return array();
+
+  $wrapper = entity_metadata_wrapper($entity_type, $etid);
+
+  if ($etid) {
+    $tree[$etid] = new stdClass();
+    $tree[$etid]->etid = $etid;
+    $tree[$etid]->entity_type = $entity_type;
+    $tree[$etid]->parent = $depth;
+    // Get the first group associated with the entity.
+    if ($options['direction'] == 'children') {
+      $query = db_select('og_membership', 'ogm');
+      $query->fields('ogm', array('etid', 'entity_type', 'field_name', 'gid'));
+      if ($options['entities_allowed']) $query->condition('entity_type', $options['entities_allowed'], 'IN');
+      if ($options['bundles_allowed']) $query->condition('field_name', $options['bundles_allowed'], 'IN');
+      if ($options['ids_allowed']) $query->condition('gid', $options['ids_allowed'], 'IN');
+      $query->condition('gid', $etid);
+      $query->condition('etid', $etid, '<>');
+      $children_entity = $query->execute()->fetchAll();
+      if ($children_entity) {
+        foreach ($children_entity as $child_entity) {
+          if (og_is_group($child_entity->entity_type, $child_entity->etid)) {
+            if ($options['nested']) {
+              $tree[$etid]->children[$child_entity->etid] = new stdClass();
+              $tree[$etid]->children[$child_entity->etid]->gid = $etid;
+              if ($child_entity->etid <> $etid && !array_key_exists($child_entity->etid, $tree))
+                og_get_hierarchy($child_entity->entity_type, $child_entity->etid, $options, $tree[$etid]->children, $depth + 1);
+            }
+            else {
+              if ($child_entity->etid <> $etid && !array_key_exists($child_entity->etid, $tree)) {
+                $tree[$child_entity->etid] = new stdClass();
+                og_get_hierarchy($child_entity->entity_type, $child_entity->etid, $options, $tree, $depth + 1);
+              }
+            }
+          }
+          else {
+            $info = entity_get_info($child_entity->entity_type);
+            $label = $info['label'];
+            $entity = entity_load($child_entity->entity_type, array($child_entity->etid));
+            if (current($entity)){
+              if (isset($info['entity keys']['label'])) {
+                $label = current($entity)->{$info['entity keys']['label']};
+              }
+              if ($options['nested']) {
+                $tree[$etid]->children[$child_entity->etid] = new stdClass();
+                $tree[$etid]->children[$child_entity->etid]->name = $label;
+                $tree[$etid]->children[$child_entity->etid]->etid = $child_entity->etid;
+                $tree[$etid]->children[$child_entity->etid]->entity_type = $child_entity->entity_type;
+                $tree[$etid]->children[$child_entity->etid]->gid = $child_entity->gid;
+                $tree[$etid]->children[$child_entity->etid]->parent = $depth + 1;
+              }
+              else {
+                $tree[$child_entity->etid] = new stdClass();
+                $tree[$child_entity->etid]->name = $label;
+                $tree[$child_entity->etid]->etid = $child_entity->etid;
+                $tree[$child_entity->etid]->entity_type = $child_entity->etid;
+                $tree[$child_entity->etid]->parent = $depth + 1;
+              }
+            }
+          }
+        }
+      }
+    }
+    elseif ($options['direction'] == 'parents' ) {
+
+      // Get the first group associated with the entity.
+      if (isset($wrapper->og_membership)) {
+        $nb_parents = count($wrapper->og_membership);
+        for ($i = 0;$i < $nb_parents; $i++) {
+          $parent = $wrapper->og_membership->get($i)->group->value();
+          if ($options['nested']) {
+            $tree[$etid]->parents[$parent->etid] = new stdClass();
+            if ($parent->etid <> $etid)
+              og_get_hierarchy('node', $parent->nid, $options, $tree[$etid]->parents, $depth - 1);
+          }
+          else {
+            $tree[$parent->nid] = new stdClass();
+            if ($parent->nid <> $etid)
+              og_get_hierarchy('node', $parent->nid, $options, $tree, $depth - 1);
+          }
+        }
+      }
+    }
+  }
+  return $tree;
+}

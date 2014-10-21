@@ -1,0 +1,508 @@
+<?php
+
+require_once drupal_get_path('module','ekomundi').'/includes/define.inc';
+require_once drupal_get_path('module','ekomundi').'/includes/ekomundi.functions.inc';
+require_once drupal_get_path('module','ekomundi').'/ekomundi.concat.inc';
+
+/**
+ * Implements hook_menu().
+ */
+function ekoaction_menu(){
+  $items['node/%/ekopoint/delete-empty'] = array(
+    'title' => t('Add Ekopoints'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekoaction_confirm_delete_ekopoint_form', 1),
+    'access callback' => 'ekoaction_access_check',
+    'access arguments' => array('update', 1),
+    'type' => MENU_CALLBACK,
+  );
+  $items['simplepage'] = array(
+    'title' => t('A simple page'),
+    'page callback' => 'ekoaction_simple_page',
+    'access callback' => TRUE,
+  );
+  return $items;
+}
+
+function ekoaction_simple_page(){
+  $arr1['Z'] = array('a','b','c');
+  $arr2['Y'] = array('A','B','C');
+  $arr3['X'] = array('1','2','3');
+
+  dpm(get_all_combinaisons($arr1, $arr2,$arr3));
+
+  return array('#markup' => 'Et hop !');
+}
+
+
+function get_all_combinaisons($array1, $array2, $array3){
+  $all = array();
+  $key1 = array_keys($array1);
+
+  foreach ( $array1[$key1[0]] as $val1){
+    $key2 = array_keys($array2);
+    foreach ($array2[$key2[0]] as $val2){
+      $key3 = array_keys($array3);
+      foreach ($array3[$key3[0]] as $val3) {
+        $all[] = array($key1[0] => $val1, $key2[0] =>$val2, $key3[0] =>$val3);
+      }
+    }
+  }
+  return $all;
+}
+
+
+
+function ekoaction_access_check($op, $nid) {
+  if(is_numeric($nid)){
+    $node = node_load($nid);
+    return node_access($op, $node);
+  }
+  else {
+    return FALSE;
+  }
+
+}
+
+function ekoaction_confirm_delete_ekopoint_form($form, $form_state, $nid) {
+
+  $form['nid'] = array(
+    '#type' => 'hidden',
+    '#value' => check_plain($nid),
+  );
+
+  $question = t('Are you sure you want to delete the empty ekopoints.');
+
+  return confirm_form($form, $question, 'node/' . $nid .'/ekopoint', t('This action cannot be undone.'), t('Yes'), t('Cancel'));
+}
+
+function ekoaction_confirm_delete_ekopoint_form_submit($form, &$form_state){
+
+  $node = node_load($form_state['values']['nid']);
+  $deleted = 0;
+  foreach( $node->{FIELD_COL_EKOPOINT}['und'] as $delta => $item_id){
+      $fc = entity_load('field_collection_item', array($item_id));
+      $fc = $fc[$item_id['value']];
+      if(sizeof($fc->{FIELD_COL_EKOPROP}) == 0 ){
+        entity_delete_multiple('field_collection_item', array($item_id)); // Delete field collection item.
+        $deleted++;
+        unset($node->{FIELD_COL_EKOPOINT}['und'][$delta]);
+      }
+  }
+  node_save($node);
+
+  $update_msg = '%ekopoint has been deleted.';
+  $ekopoints = format_plural($deleted, 'One ekopoint', '@count ekopoints');
+
+  drupal_set_message(t($update_msg, array('%ekopoint' => $ekopoints)));
+
+  drupal_goto('node/' . $node->nid . '/ekopoint');
+}
+/**
+ * Implements hook_node_view().
+ */
+function ekoaction_node_view($node, $view_mode, $langcode) {
+  global $user;
+  if($user->uid == 1 ){
+
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function ekoaction_form_alter(&$form,&$form_state,$form_id){
+  $allowed_form_id = array('action_node_form', 'article_node_form', 'oeuvre_node_form');
+  $groupe_name = 'group_action';
+  global $user;
+  $allowed_user = array(1,38);
+  if ( in_array($form_id , $allowed_form_id) ) {
+
+    if ( in_array($user->uid , $allowed_user) ) {
+      //dpm($form);
+    }
+    /*
+    $form['#groups'][$groupe_name]->children[] = 'confirm_delete_old_fc';
+    $form['#group_children']['confirm_delete_old_fc'] = $groupe_name;
+
+
+    $form['field_tid_actions']['und']['#ajax'] = array(
+      'callback' => 'ajax_confirm_delete_old_fc_callback',
+      'wrapper' => array('div_confirm_delete_old_fc'),
+    );
+    if(isset($form_state['values']) && ( $form_state['values']['field_tid_actions']['und']['0']['tid'] != $form['field_tid_actions']['und']['#default_value'][0] ) ){
+      $form['confirm_delete_old_fc'] = array(
+        '#prefix' => '<div id="div_confirm_delete_old_fc">',
+        '#suffix' => '</div>',
+        '#weight' => '100',
+        '#type' => 'checkbox',
+        '#title' => t('Do you want to delete your old ekopoint?'),
+      );
+
+    }
+    else{
+      $form['confirm_delete_old_fc'] = array(
+        '#prefix' => '<div id="div_confirm_delete_old_fc">',
+        '#suffix' => '</div>',
+        '#weight' => '100',
+      );
+
+    }
+    */
+  }
+
+}
+
+function ajax_confirm_delete_old_fc_callback(&$form, $form_state) {
+  return $form['confirm_delete_old_fc'];
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function ekoaction_node_update($node) {
+  //dpm($node);
+  $node->is_new = FALSE;
+  $allowed_node_type = array('article','action', 'oeuvre');
+  global $user;
+
+
+  if ( in_array($node->type , $allowed_node_type) ) {
+    //dpm("allowed");
+    //get action in the node
+    $node_actions = field_get_items('node', $node, FIELD_ACTION_EKOPOINT);
+
+    //get domains in parent group
+    $domains = array();
+    foreach($node->og_group_ref['und'] as $delta => $og){
+      $node_parent = node_load($og['target_id']);
+      if(isset($node_parent->{FIELD_DOMAINE_EKOPOINT}['und'])){
+        $domains[] = $node_parent->{FIELD_DOMAINE_EKOPOINT}['und'][0]['tid'];
+      }
+    }
+
+    //get array of action
+    $actions = array();
+    foreach($node_actions as $delta => $tid){
+      $actions[] = $tid['tid'];
+    }
+
+    if(sizeof($actions)>0 && sizeof($domains)>0){
+      //$add_to_pid[VID_ACTION][]=$action[0]['tid'];
+      $arr_act[VID_ACTION] = $actions;
+      $arr_dom[VID_DOMAINE] = $domains;
+
+      if(isset($node->{FIELD_OBJET_MULTIPLE}) && isset($node->{FIELD_OBJET_MULTIPLE}['und'])  ){
+        foreach ($node->{FIELD_OBJET_MULTIPLE}['und'] as $item) {
+          $arr_obj[VID_OBJET][] = $item['tid'];
+        }
+      }
+      else{
+        //recupere touts les termes du vocabulaire
+        $taxo=taxonomy_get_tree(VID_OBJET);
+        foreach ($taxo as $item) {
+          $key = $item->tid;
+          $arr_obj[VID_OBJET][]=$item->tid;
+        }
+      }
+
+      $pids[0]=array();
+
+      $vid_to_sort=VID_DOMAINE;
+      //generer un tableau de tous les point a concatener
+
+      $pids = get_all_combinaisons($arr_dom, $arr_act,$arr_obj);
+
+      //require_once DRUPAL_ROOT.'/sites/all/modules/ekomundi/includes/array-sorter.inc';
+      //$sorter = new array_sorter($pids, $vid_to_sort);
+      //$pids = $sorter->sortit();
+
+      //dpm($node->{FIELD_COL_EKOPOINT});
+
+      if( sizeof($node->{FIELD_COL_EKOPOINT}) == 0){
+        $deltafc = isset($node->{FIELD_COL_EKOPOINT}['und']) ? sizeof($node->{FIELD_COL_EKOPOINT}['und']) : 0 ;
+        $field_col_items_created = _add_field_col_ekopoint($node, $pids, $deltafc);
+        $node->{FIELD_COL_EKOPOINT}['und'] = $field_col_items_created ;
+      }
+      else{
+        $original = $node->original;
+        //dpm(array($node->{FIELD_OBJET_MULTIPLE}['und'],$original->{FIELD_OBJET_MULTIPLE}['und'] ));
+        //dpm(arrayRecursiveDiff($node->{FIELD_OBJET_MULTIPLE}['und'],$original->{FIELD_OBJET_MULTIPLE}['und'] ));
+
+        if( $node->{FIELD_ACTION_EKOPOINT}['und'][0]['tid'] != $original->{FIELD_ACTION_EKOPOINT}['und'][0]['tid'] ||
+          sizeof(arrayRecursiveDiff($node->{FIELD_OBJET_MULTIPLE}['und'],$original->{FIELD_OBJET_MULTIPLE}['und'] ) ) >0 ) {
+          $deltafc = isset($node->{FIELD_COL_EKOPOINT}['und']) ? sizeof($node->{FIELD_COL_EKOPOINT}['und']) : 0 ;
+
+          $field_col_items_created = _add_field_col_ekopoint($node, $pids, $deltafc);
+          //dpm( $field_col_items_created);
+          $node->{FIELD_COL_EKOPOINT}['und'] = array_merge($node->{FIELD_COL_EKOPOINT}['und'], $field_col_items_created) ;
+        }
+      }
+
+    }
+    else{
+      if (sizeof($actions) == 0){
+        drupal_set_message(t('Select an action term for this content to gerenrate ekopoints'),'warning');
+      }
+      if (sizeof($domains) == 0){
+        drupal_set_message(t('Select a domain term in the workgroup to generate ekopoints'),'warning');
+      }
+    }
+  //$query = db_delete('node_access')->condition('nid', $node->nid);
+  //$query->execute();
+  }
+
+}
+
+function ekoaction_node_access_records_alter(&$grants, $node){
+  //dpm($grants);
+}
+
+/**
+ * Implements hook_node_insert().
+ */
+function ekoaction_node_insert($node) {
+
+  $node->is_new = FALSE;
+  $allowed_node_type = array('article','action', 'oeuvre');
+  global $user;
+
+  if ( in_array($node->type , $allowed_node_type) ) {
+
+    //get action in the node
+    $node_actions = field_get_items('node', $node, FIELD_ACTION_EKOPOINT);
+
+    //get domains in parent group
+    $domains = array();
+    foreach($node->og_group_ref['und'] as $delta => $og){
+      $node_parent = node_load($og['target_id']);
+      if(isset($node_parent->{FIELD_DOMAINE_EKOPOINT}['und'])){
+        $domains[] = $node_parent->{FIELD_DOMAINE_EKOPOINT}['und'][0]['tid'];
+      }
+    }
+
+    //get array of action
+    $actions = array();
+    foreach($node_actions as $delta => $tid){
+      $actions[] = $tid['tid'];
+    }
+
+    if(sizeof($actions)>0 && sizeof($domains)>0){
+      //$add_to_pid[VID_ACTION][]=$action[0]['tid'];
+      $arr_act[VID_ACTION] = $actions;
+      $arr_dom[VID_DOMAINE] = $domains;
+
+      if(isset($node->{FIELD_OBJET_MULTIPLE}) && isset($node->{FIELD_OBJET_MULTIPLE}['und'])  ){
+        foreach ($node->{FIELD_OBJET_MULTIPLE}['und'] as $item) {
+          $arr_obj[VID_OBJET][] = $item['tid'];
+        }
+      }
+      else{
+        //recupere touts les termes du vocabulaire
+        $taxo=taxonomy_get_tree(VID_OBJET);
+        foreach ($taxo as $item) {
+          $key = $item->tid;
+          $arr_obj[VID_OBJET][]=$item->tid;
+        }
+      }
+
+      $pids[0]=array();
+
+      $vid_to_sort=VID_DOMAINE;
+      //generer un tableau de tous les point a concatener
+
+      $pids = get_all_combinaisons($arr_dom, $arr_act,$arr_obj);
+
+      //dpm($node);
+      if( isset($node->{FIELD_COL_EKOPOINT}) && sizeof($node->{FIELD_COL_EKOPOINT}) == 0){
+        $deltafc = isset($node->{FIELD_COL_EKOPOINT}['und']) ? sizeof($node->{FIELD_COL_EKOPOINT}['und']) : 0 ;
+        $field_col_items_created = _add_field_col_ekopoint($node, $pids, $deltafc);
+        $node->{FIELD_COL_EKOPOINT}['und'] = $field_col_items_created;
+      }else{
+        $field_col_items_created = _add_field_col_ekopoint($node, $pids, 0);
+        $node->{FIELD_COL_EKOPOINT}['und'] = $field_col_items_created;
+      }
+    }
+    else{
+      if (!$action){
+        drupal_set_message(t('Select an action term for this content to gerenrate ekopoints'),'warning');
+      }
+      if (!sizeof($domains)==0){
+        drupal_set_message(t('Select a domain term in the workgroup to generate ekopoints'),'warning');
+      }
+    }
+    $query = db_delete('node_access')->condition('nid', $node->nid);
+    $query->execute();
+  }
+
+
+}
+
+
+/**
+ * Implement hook_panels_pane_content_alter()
+ * Alter path of adding a field collection
+ */
+function ekoaction_panels_pane_content_alter(&$content, $pane, $args, $context){
+  if(isset($content) && isset($content->subtype) ){
+    if($content->subtype=='node:field_col_ekopoint'){
+      $allowed_node_type = array('article','action', 'oeuvre');
+
+      $node_type = $context['argument_entity_id:node_1']->data->type;
+      if( in_array($node_type , $allowed_node_type)  ){
+
+        $node_to_update =  $context['argument_entity_id:node_1']->data;
+        if (node_access("update", $node_to_update) && isset($node_to_update->{FIELD_COL_EKOPOINT}['und']) && sizeof($node_to_update->{FIELD_COL_EKOPOINT}['und']) > 0){
+          $content->content['#suffix'] = substr($content->content['#suffix'], 0, -6) . l(t('Delete empty ekopoints'),'node/' . $node_to_update->nid . '/ekopoint/delete-empty', array('attributes' => array('class' => 'button') ) ) . '</div>';
+        }
+
+      }
+
+    }
+  }
+}
+
+function _add_field_col_ekopoint($to_node, $pids, $delta) {
+  global $language ;
+  global $user;
+  $langcode =  $language->language ;
+
+  $user = user_load($user->uid);
+  $field_col_items_created=array();
+
+  foreach($pids as $k => $pid){
+    if($pid!='0'){
+
+      $ekopoint_find = _ekopoints_exists($pid);
+      if($ekopoint_find !== FALSE){
+        //l'ekopoint existe
+        //$node_project=node_load($to_node->nid);
+        $ekopoint=node_load($ekopoint_find);
+
+        if(!array_key_exists($ekopoint_find,(array) _ekomundi_get_ekopoints($to_node) )){
+          //dpm('on ajoute col_ekopoint '.$ekopoint_find. 'a  '.$node_project->nid);
+          // Create and save field collection for node
+          $field_collection_item = entity_create('field_collection_item', array('field_name' => FIELD_COL_EKOPOINT));
+          $field_collection_item->setHostEntity('node', $to_node);
+          $field_collection_item->{FIELD_REF_POINT_FC_EKOPOINT}[LANGUAGE_NONE][]['target_id'] = $ekopoint_find;
+          $field_collection_item->field_pid_advanc[LANGUAGE_NONE][]['tid'] = 103;
+          $field_collection_item->save();
+          $field_col_items_created[$delta] = array('value' => $field_collection_item->item_id, 'revision_id' => $field_collection_item->revision_id );
+          $delta++;
+          unset($field_collection_item);
+          drupal_set_message(t('<i>@title</i> was added to <em>@title_project</em>.',array('@title'=>$ekopoint->title,'@title_project'=>$to_node->title) ));
+
+        }
+        else{
+          //drupal_set_message( t('<em>@title</em> already exists in <em>@title_project</em>.',array('@title'=>$ekopoint->title,'@title_project'=>$to_node->title)),'warning');
+        }
+      }
+      else{
+        //dpm('on creer ekopoint : '. ekomundi_concat($pid) .'avec a:'.$pid[VID_ACTION].' d:'.$pid[VID_DOMAINE].' o:'.$pid[VID_OBJET].' ');
+        $new_node = new StdClass();
+        $new_node->type='ekopoint';
+        $new_node->{FIELD_ACTION_EKOPOINT}['und'][0]['tid'] = $pid[VID_ACTION];
+        if(isset($pid[VID_DOMAINE]) && !empty($pid[VID_DOMAINE]) ){
+          $new_node->{FIELD_DOMAINE_EKOPOINT}['und'][0]['tid'] = $pid[VID_DOMAINE];
+        }
+        $new_node->{FIELD_OBJET_EKOPOINT}['und'][0]['tid'] = $pid[VID_OBJET];
+
+        unset($pid[VID_NIVEAU]);
+        unset($pid[VID_ETAPE]);
+        $uid_user_ekomundi = 2;
+        $ekopoint_title = ekomundi_concat($pid);
+
+
+        $new_node->title = $ekopoint_title;
+        $new_node->uid = $uid_user_ekomundi; // user ekomundi
+        $new_node->language = 'fr';
+        node_save($new_node);
+
+        $nid_ekopoint = $new_node->nid;
+
+
+        unset($new_node);
+
+        $i=0;
+        //$node_project=node_load($to_node->nid);
+        //dpm('puis on ajout fc_ekopoint dans : '. $to_node->nid .'');
+
+        // Create and save field collection for node
+        $field_collection_item = entity_create('field_collection_item', array('field_name' => FIELD_COL_EKOPOINT));
+        $field_collection_item->setHostEntity('node', $to_node);
+        $field_collection_item->{FIELD_REF_POINT_FC_EKOPOINT}[LANGUAGE_NONE][]['target_id'] = $nid_ekopoint;
+        $field_collection_item->field_pid_advanc[LANGUAGE_NONE][]['tid'] = 103;
+        $field_collection_item->save();
+        $field_col_items_created[$delta] = array('value' => $field_collection_item->item_id, 'revision_id' => $field_collection_item->revision_id );
+        $delta++;
+        unset($field_collection_item);
+
+        drupal_set_message(t('<em>@title_ekopoint</em> was added in <em>@title_project</em>.',array('@title_ekopoint' => $ekopoint_title, '@title_project' => $to_node->title)));
+
+      }
+    }
+  }
+  return  $field_col_items_created;
+}
+
+/**
+ * @param : nid or node object.
+ * Returns an array that contain the list of ekopoint in node.
+ */
+function _ekomundi_get_ekopoints($node){
+  if(is_numeric($node)){
+    $node = node_load($node);
+  }
+  elseif(is_object($node)){
+    $node = $node;
+  }
+  else{
+    return ;
+  }
+  //dpm($node);
+  if(isset($node->{FIELD_COL_EKOPOINT}) && isset($node->{FIELD_COL_EKOPOINT}['und']['0'])){
+    $ekopoints = array();
+    foreach($node->{FIELD_COL_EKOPOINT}['und'] as $item_id){
+      $fc=entity_load('field_collection_item', array($item_id['value']));
+      $fc=$fc[$item_id['value']];
+
+      if(isset($fc->{FIELD_REF_POINT_FC_EKOPOINT}['und']) ){
+        $ekopoints[$fc->{FIELD_REF_POINT_FC_EKOPOINT}['und'][0]['target_id']] = $fc->{FIELD_REF_POINT_FC_EKOPOINT}['und'][0];
+      }
+    }
+    return $ekopoints;
+  }
+  else{
+    return;
+  }
+}
+
+
+/**
+ *
+ */
+function _ekopoints_exists($pid){
+
+  $query=db_select('taxonomy_index','t');
+  $query->join('node', 'n', 't.nid = n.nid');
+  $query->fields('t',array('nid'));
+  $query->condition('n.type','ekopoint','=');
+
+  $query->condition('t.tid',$pid,'IN');
+
+  $result = $query->execute();
+
+  // check_nb_taxo combien de fois le noeud a un term de taxo correspondant
+  $check_nb_taxo=array();
+
+  while($records= $result->fetchAssoc()){
+
+    if( isset($check_nb_taxo[$records['nid'] ] ) ){
+      $check_nb_taxo[$records['nid']]=$check_nb_taxo[$records['nid']]+1;
+    }
+    else{
+      $check_nb_taxo[$records['nid']]=1;
+    }
+  }
+  return array_search('3',$check_nb_taxo);
+}

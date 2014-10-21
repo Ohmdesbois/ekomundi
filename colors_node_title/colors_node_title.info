@@ -1,0 +1,4 @@
+name = Colors node title
+description = Set with colors module the color for node title
+core = 7.x
+dependencies[] = colors

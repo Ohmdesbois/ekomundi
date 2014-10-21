@@ -1,0 +1,5 @@
+name = Eko toolbox
+description = Provide a toolbox for node from ctools ajax example 
+core = 7.x
+package = Ekomundi
+dependencies[] = ctools

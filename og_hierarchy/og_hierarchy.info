@@ -1,0 +1,10 @@
+name = OG hierarchy
+description = BY JO ! Enables the categorization of audience.
+package = "Organic groups"
+version = 7.x-1.x-dev
+core = 7.x
+dependencies[] = og
+
+
+files[] = views/og_hierarchy_handler_argument_gid.inc
+files[] = views/og_hierarchy_handler_field_gid_title.inc

@@ -1,0 +1,4 @@
+name = Eko INSTALL
+description = standart profil installation
+core = 7.x
+package = Ekomundi

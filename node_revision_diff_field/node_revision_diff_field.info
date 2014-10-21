@@ -1,0 +1,5 @@
+name = Node revision diff field
+description = Node changes can be stored in this field, attached to a comment
+core = 7.x
+dependencies[] = field_extrawidgets
+dependencies[] = token

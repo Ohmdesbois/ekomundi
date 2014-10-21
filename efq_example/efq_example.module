@@ -1,0 +1,189 @@
+<?php
+/**
+ * @file
+ * Code for the efq_example module
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function efq_example_menu() {
+  $items['efq'] = array(
+    'title' => 'EntityFieldQuery example: recently published content',
+    'page callback' => 'efq_example_listing',
+    'access arguments' => array('access content'),
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function efq_example_block_info() {
+  $blocks['content_by_state'] = array(
+    'info' => t('Other Content In This State'),
+    'cache' => DRUPAL_NO_CACHE
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function efq_example_block_view($delta = '') {
+  $block = array();
+  switch ($delta) {
+    case 'content_by_state':
+      $block = efq_example_content_by_state();
+      break;
+  }
+  return $block;
+}
+
+/**
+ * Implementation of hook_node_info().
+ */
+function efq_example_node_info() {
+  $items = array(
+    'efq_article' => array(
+      'name' => t('EFQ Article'),
+      'base' => 'node_content',
+      'description' => t('Article node type for EFQ example.'),
+      'has_title' => '1',
+      'title_label' => t('Title'),
+      'help' => '',
+    ),
+    'efq_page' => array(
+      'name' => t('EFQ Page'),
+      'base' => 'node_content',
+      'description' => t('Page type for the EFQ example module.'),
+      'has_title' => '1',
+      'title_label' => t('Title'),
+      'help' => '',
+    ),
+    'efq_photo' => array(
+      'name' => t('EFQ Photo'),
+      'base' => 'node_content',
+      'description' => t('Photo node type for the EFQ example module.'),
+      'has_title' => '1',
+      'title_label' => t('Title'),
+      'help' => '',
+    ),
+  );
+  return $items;
+}
+
+function efq_example_listing($state = NULL, $node_types = array('efq_article', 'efq_page', 'efq_photo')) {
+  // instantiate the query using our extended query object
+  $query = new NodeEntityFieldQuery();
+  // set up some basic parameters
+  $query
+    ->entityCondition('bundle', $node_types);
+  // if $state is defined, add that fieldCondition to the query
+  if (!empty($state)) {
+    $query->fieldCondition('field_us_state', 'value', $state);
+  }
+  // execute the query
+  $result = $query->execute();
+  $output = array();
+  // return the nodes as teasers
+  if (!empty($result['node'])) {
+    $output['nodes'] = node_view_multiple(node_load_multiple(array_keys($result['node'])), 'teaser');
+    $output['pager']['#markup'] = theme('pager', $query->pager);
+  }
+  else {
+    $output['status']['#markup'] = t('No results were returned.');
+  }
+  return $output;
+}
+
+/**
+ * Produces content for a block, based on the state of the host node.
+ */
+function efq_example_content_by_state() {
+  $block = array();
+  // if we don't have a node to draw from, in our current setup, we won't have a state and can't continue
+  if ($node = menu_get_object()) {
+    // get the state value
+    $field_name = "field_us_state";
+    if (!empty($node->$field_name)) {
+      $items = field_get_items('node', $node, $field_name);
+      $state = $items[0]['value'];
+    }
+    // only continue if we have a state value
+    if ($state) {
+      // instantiate the query
+      $query = new NodeEntityFieldQuery;
+      // limit the query to our established node types
+      $node_types = array('efq_article', 'efq_page', 'efq_photo');
+      $query->entityCondition('bundle', $node_types);
+      // add the state value
+      $query->fieldCondition($field_name, 'value', $state);
+      // prevent the current node from displaying in the block
+      $query->propertyCondition('nid', $node->nid, '<>');
+      // add a small range
+      $query->range(0, 5);
+      // remove the current node from the query
+      $query->excludeNode();
+
+      // execute the query
+      $result = $query->execute();
+      $output = array();
+      $block['subject'] = t('Other Content for @state', array('@state' => $state));
+
+      if (!empty($result['node'])) {
+        // return the nodes as teasers
+        $nodes = node_view_multiple(node_load_multiple(array_keys($result['node'])), 'teaser');
+        $block['content']['nodes'] = $nodes;
+        // let's include links to the content listing for convenience
+        $node_types = array(
+          'efq_article' => 'Articles',
+          'efq_page' => 'Pages',
+          'efq_photo' => 'Photos',
+        );
+        $links = array(l(t('All Content for @state', array('@state' => $state)), "efq/$state"));
+        foreach ($node_types as $node_type => $node_type_name) {
+          $links[] = array(l(t('All @node_type_name for @state', array('@node_type_name' => $node_type_name, '@state' => $state)), "efq/$state/${node_type}"));
+        }
+        $item_list = array(
+          '#items' => $links,
+          '#type' => 'ul',
+          '#theme' => 'item_list',
+        );
+        $block['content']['links'] = $item_list;
+      }
+      else {
+        $block['content']['status']['#markup'] = t('No results.');
+      }
+    }
+  }
+  return $block;
+}
+
+class NodeEntityFieldQuery extends EntityFieldQuery {
+  // define some defaults for the class
+  public function __construct() {
+    // now we don't need to define these over and over anymore
+    $this
+      ->entityCondition('entity_type', 'node')
+      ->propertyCondition('status', 1)
+      ->propertyOrderBy('created', 'DESC');
+    // define a pager
+    $this->pager();
+  }
+
+  /**
+   * If we're on a node, and if the entity_type is node, exclude the local node from the query
+   */
+  public function excludeNode($nid = '') {
+    if ($nid = '') {
+      $object = menu_get_object();
+      $nid = $object->nid;
+    }
+    if (!empty($nid) && $this->entityConditions['entity_type']['value'] === 'node') {
+      $this->propertyCondition('nid', $nid, '<>');
+    }
+    return $this;
+  }
+
+}

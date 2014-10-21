@@ -1,0 +1,5 @@
+name = Private comment
+description = Hide a comment if it is private.
+dependencies[] = comment
+dependencies[] = field
+core = 7.x

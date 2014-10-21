@@ -1,0 +1,12 @@
+<?php
+/**
+ * @file
+ */
+
+/**
+ * Implements hook_init().
+ */
+function eko_view_filter_init() {
+  $path = drupal_get_path('module', 'eko_view_filter');
+  drupal_add_js($path .'/eko_view_filter.js');
+}

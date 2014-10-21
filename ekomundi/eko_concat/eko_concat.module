@@ -1,0 +1,426 @@
+<?php
+
+require_once drupal_get_path('module','ekomundi').'/includes/define.inc';
+
+
+
+/**
+ * Implements hook_menu().
+ */
+function eko_concat_menu() {
+
+  $items['ekopoint/add/node/%'] = array(
+    'title' => t('Add Ekopoints'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekopoint_add_form',3),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+    'file' => 'ekopoint_add.inc',
+  );
+
+  $items['ekopoint/import/node/%'] = array(
+    'title' => t('Import Ekopoints'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekopoint_import_form',3),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+    'file' => 'ekopoint_import.inc',
+  );
+  $items['ekoprop/add/field_collection_item/%'] = array(
+    'title' => t('Add Propositions'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ekoprop_add_form',3),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+    'file' => 'ekoprop_add.inc',
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function eko_concat_permission() {
+  return array(
+    'administer proposition taxonomy' =>  array(
+      'title' => t('Administer taxonomy of proposition'),
+      'description' => t('Change the taxonomy for proposition content type.'),
+    ),
+  );
+}
+
+function get_all_pids_if_some_term_is_null($pids,$to_add){
+
+  $res=array();
+
+  $key=array_keys($to_add);
+
+  foreach($key as $k){
+    unset($pids[0][$k]);
+  }
+
+
+  $k=0;
+
+  if(sizeof($key)==1){
+    for($i=0;$i<sizeof($to_add[$key[$k]]);$i++){
+      $res[]=array($key[$k]=>$to_add[$key[$k]][$i]) + $pids[0];
+    }
+    return $res;
+  }
+  elseif(sizeof($key)==2){
+    for($i=0;$i<sizeof($to_add[$key[$k]]);$i++){
+      for($j=0;$j<sizeof($to_add[$key[$k+1]]);$j++){
+        $res[]=array($key[$k]=>$to_add[$key[$k]][$i],$key[$k+1]=>$to_add[$key[$k+1]][$j]) + $pids[0];
+      }
+    }
+    return $res;
+
+  }
+  elseif(sizeof($key)==3){
+    for($i=0;$i<sizeof($to_add[$key[$k]]);$i++){
+      for($j=0;$j<sizeof($to_add[$key[$k+1]]);$j++){
+        for($l=0;$l<sizeof($to_add[$key[$k+2]]);$l++){
+          $res[]=array($key[$k]=>$to_add[$key[$k]][$i],$key[$k+1]=>$to_add[$key[$k+1]][$j],$key[$k+2]=>$to_add[$key[$k+2]][$l] ) + $pids[0] ;
+        }
+      }
+    }
+    return $res;
+  }
+  elseif(sizeof($key)>3){
+    return false;
+  }
+  else{
+    return $pids;
+  }
+
+}
+
+
+
+function get_value_field_genre($tid,$language){
+
+  $field_genre=db_select('field_data_field_genre','g')
+    ->fields('g',array('field_genre_value'))
+    ->condition('g.entity_id',$tid,'=')
+    ->condition('g.language',$language,'=')
+    ->execute()->fetchAssoc();
+
+  return $field_genre['field_genre_value'] ;
+}
+
+
+
+/**
+ * Implement hooh_form_FORM_ID_alter()
+ */
+
+function eko_concat_form_proposition_node_form_alter(&$form, &$form_state, $form_id) {
+  global $user;
+
+  $get=drupal_get_query_parameters();
+
+  $ref_prop_eko = variable_get('ekomundi_prop_field_ref_ekopoint');
+  $fpd = variable_get('ekomundi_prop_field_domaine');
+  $fpo = variable_get('ekomundi_prop_field_objet');
+  $fpa = variable_get('ekomundi_prop_field_action');
+
+  $fed = variable_get('ekomundi_ekopoint_field_domaine');
+  $feo = variable_get('ekomundi_ekopoint_field_objet');
+  $fea = variable_get('ekomundi_ekopoint_field_action');
+
+  $fc_ref_ekopoint = variable_get('ekomundi_fc_ref_ekopoint');
+
+
+  $form[$ref_prop_eko]['#access'] = user_access('administer corresponding node references settings');
+
+
+  if(isset($get['field_col_ekopoint'])){
+    $form[$fpd]['#access'] = user_access('administer proposition taxonomy');
+    $form[$fpo]['#access'] = user_access('administer proposition taxonomy');
+    $form[$fpa]['#access'] = user_access('administer proposition taxonomy');
+
+    $form['actions']['submit']['#submit'] =array( 'eko_concat_add_proposition_submit');
+
+    $fc=entity_load('field_collection_item',array($get['field_col_ekopoint']) );
+    if(isset($fc[$get['field_col_ekopoint']])){
+      $fc=$fc[$get['field_col_ekopoint']];
+      $host_entity = $fc->hostEntity();
+      //$user_membership = og_get_membership('node',$host_entity->nid,'user',$user->uid);
+
+      if(node_access('view', $host_entity) ){
+        $ekopoint = field_get_items('field_collection_item',$fc,$fc_ref_ekopoint);
+        $ekopoint = node_load($ekopoint[0]['target_id']);
+        $domaines=field_get_items('node',$ekopoint,$fed);
+        $actions=field_get_items('node',$ekopoint,$fea);
+        $objets=field_get_items('node',$ekopoint,$feo);
+
+        foreach($domaines as $term){
+          $terms=taxonomy_get_parents_all($term['tid']);
+          foreach($terms as $parent){
+            $form[$fpd]['und']['#default_value'][$parent->tid]=$parent->tid;
+          }
+        }
+        foreach($actions as $term){
+          $terms=taxonomy_get_parents_all($term['tid']);
+          foreach($terms as $parent){
+            $form[$fpa]['und']['#default_value'][$parent->tid]=$parent->tid;
+          }
+        }
+        foreach($objets as $term){
+          $terms=taxonomy_get_parents_all($term['tid']);
+          foreach($terms as $parent){
+            $form[$fpo]['und']['#default_value'][$parent->tid]=$parent->tid;
+          }
+        }
+      }
+      else{
+        drupal_set_message(t('You can not add this proposition to this ekopoint.'), 'warning' );
+        //drupal_goto('node/add/proposition');
+      }
+    }
+    else{
+      drupal_set_message(t('You can not add this proposition to this ekopoint.'), 'warning');
+      drupal_goto('node/add/proposition');
+    }
+  }
+  elseif(isset($get['field_ref_prop_to_eko'])){
+    $nid = check_plain($get['field_ref_prop_to_eko']);
+    $node = node_load($nid);
+    if($node->type == 'ekopoint'){
+      $form[$fpd]['#access'] = user_access('administer proposition taxonomy');
+      $form[$fpo]['#access'] = user_access('administer proposition taxonomy');
+      $form[$fpa]['#access'] = user_access('administer proposition taxonomy');
+
+      $form['actions']['submit']['#submit'] =array( 'eko_concat_add_proposition_submit');
+
+      $ekopoint = $node;
+      $domaines=field_get_items('node',$ekopoint,$fed);
+      $actions=field_get_items('node',$ekopoint,$fea);
+      $objets=field_get_items('node',$ekopoint,$feo);
+
+      foreach($domaines as $term){
+        $terms=taxonomy_get_parents_all($term['tid']);
+        foreach($terms as $parent){
+          $form[$fpd]['und']['#default_value'][$parent->tid]=$parent->tid;
+        }
+      }
+      foreach($actions as $term){
+        $terms=taxonomy_get_parents_all($term['tid']);
+        foreach($terms as $parent){
+          $form[$fpa]['und']['#default_value'][$parent->tid]=$parent->tid;
+        }
+      }
+      foreach($objets as $term){
+        $terms=taxonomy_get_parents_all($term['tid']);
+        foreach($terms as $parent){
+          $form[$fpo]['und']['#default_value'][$parent->tid]=$parent->tid;
+        }
+      }
+
+    }
+    else{
+      drupal_set_message(t('You can not add this proposition to this ekopoint.'), 'warning');
+
+    }
+
+
+
+
+  }
+  //dpm($form);
+}
+
+/**
+ * Alter node type proposition when saving
+ */
+
+function eko_concat_add_proposition_submit($form, &$form_state) {
+  //dpm('eko_concat_add_proposition_submit');
+  global $user;
+  $node = node_form_submit_build_node($form, $form_state);
+  $insert = empty($node->nid);
+
+  node_save($node);
+
+  $node_link = l(t('view'), 'node/' . $node->nid);
+  $watchdog_args = array('@type' => $node->type, '%title' => $node->title);
+  $t_args = array('@type' => node_type_get_name($node), '%title' => $node->title);
+
+  if ($insert) {
+    watchdog('content', '@type: added %title.', $watchdog_args, WATCHDOG_NOTICE, $node_link);
+    drupal_set_message(t('@type %title has been created.', $t_args));
+  }
+  else {
+    watchdog('content', '@type: updated %title.', $watchdog_args, WATCHDOG_NOTICE, $node_link);
+    drupal_set_message(t('@type %title has been updated.', $t_args));
+  }
+  if ($node->nid) {
+    $form_state['values']['nid'] = $node->nid;
+    $form_state['nid'] = $node->nid;
+    $form_state['redirect'] = 'node/' . $node->nid;
+  }
+  else {
+    // In the unlikely case something went wrong on save, the node will be
+    // rebuilt and node form redisplayed the same way as in preview.
+    drupal_set_message(t('The post could not be saved.'), 'error');
+    $form_state['rebuild'] = TRUE;
+  }
+
+  $get=drupal_get_query_parameters();
+  if(isset($get['field_col_ekopoint'])){
+
+    $fc=entity_load('field_collection_item',array($get['field_col_ekopoint']) );
+    if(isset($fc[$get['field_col_ekopoint']])){
+      $fc=$fc[$get['field_col_ekopoint']];
+      $host_entity = $fc->hostEntity();
+      //$user_membership = og_get_membership('node',$host_entity->nid,'user',$user->uid);
+
+      if(node_access('view', $host_entity) ){
+
+        // Create and save field collection for node
+        $field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_col_ekoprop'));
+        $field_collection_item->setHostEntity('field_collection_item', $fc);
+        $field_collection_item->{FIELD_REF_PROP_FC_EKOPROP}[LANGUAGE_NONE][]['target_id'] = $node->nid;
+        $field_collection_item->field_tid_ponderation_1[LANGUAGE_NONE][0]['tid'] = 33;
+        $field_collection_item->save();
+        unset($field_collection_item);
+
+        $form_state['redirect'] = 'node/' . $host_entity->nid;
+        drupal_set_message(t('%title has been added to your ekopoint.', array('%title'=>$node->title)));
+
+      }
+      else{
+        drupal_set_message(t('%title has not been added to this ekopoint.', array('%title'=>$node->title)),'warning');
+      }
+
+    }
+  }
+  elseif( isset($get['field_ref_prop_to_eko'])){
+    $nid = check_plain($get['field_ref_prop_to_eko']);
+    $form_state['redirect'] = 'node/' . $nid;
+  }
+  // Clear the page and block caches.
+  cache_clear_all();
+
+}
+
+/**
+ * Implement hook_entity_view()
+ * Alter path of adding a field collection
+ */
+function eko_concat_entity_view($entity, $type, $view_mode, $langcode) {
+   //dpm($entity);
+   $fc_point = variable_get('ekomundi_field_col_ekopoint');
+   $fc_prop = variable_get('ekomundi_field_col_ekoprop');
+   if(isset($entity->content[$fc_point]) && !empty($entity->content[$fc_point]['#suffix']) ){
+
+     $old=$entity->content[$fc_point]['#suffix'];
+     $new=preg_replace( '/field-collection\/'.$fc_point.'\//','ekopoint/',$old);
+
+     $entity->content[$fc_point]['#suffix']=$new;
+     //entity
+   }
+  //dpm($node);
+   if(isset($entity->content[$fc_prop]) && !empty($entity->content[$fc_prop]['#suffix']) ){
+
+     $old=$entity->content[$fc_prop]['#suffix'];
+     $new=preg_replace( '/field-collection\/'.$fc_prop.'\//','ekoprop/',$old);
+
+     $entity->content[$fc_prop]['#suffix']=$new;
+   }
+
+   //dpm($node) ;
+}
+
+/**
+ * Implement hook_panels_pane_content_alter()
+ * Alter path of adding a field collection
+ */
+function eko_concat_panels_pane_content_alter(&$content, $pane, $args, $context){
+  if(isset($content) && isset($content->subtype) ){
+    $fc_point = variable_get('ekomundi_field_col_ekopoint');
+    $fc_prop = variable_get('ekomundi_field_col_ekoprop');
+    if($content->subtype=='node:'.$fc_point){
+
+
+      $node_type = $context['argument_entity_id:node_1']->data->type;
+      if(in_array($node_type,variable_get('ekomundi_parent_ekopoint_types')) ){
+        if(isset($content->content['#suffix']) ){
+         $old=$content->content['#suffix'];
+         $new=preg_replace( '/field-collection\/'.$fc_point.'\/add/','ekopoint/import',$old);
+         $content->content['#suffix']=$new;
+        }
+      }
+      else{
+        if(isset($content->content['#suffix']) ){
+         $old=$content->content['#suffix'];
+         $new=preg_replace( '/field-collection\/'.$fc_point.'\//','ekopoint/',$old);
+         $content->content['#suffix']=$new;
+        }
+      }
+
+    }
+    if($content->subtype=='node:'.$fc_prop){
+     if(isset($content->content['#suffix']) ){
+       $old=$content->content['#suffix'];
+       $new=preg_replace( '/field-collection\/'.$fc_prop.'\//','ekoprop/',$old);
+       $content->content['#suffix']=$new;
+     }
+    }
+  }
+}
+
+function _conjug_title($ekopoint,$node_ref){
+  global $language ;
+  $langcode =  $language->language ;
+  $types = variable_get('ekomundi_parent_ekopoint_types', array());
+  //$types = array(CT_INTENTION, CT_ACTIVITE, CT_ORGANISME);
+  //dpm($types);
+  $group_hiearchie = array();
+  _og_get_hierarchie($node_ref->nid,$group_hiearchie);
+
+  foreach($group_hiearchie as $parent){
+    $p = node_load($parent[0]);
+    if(in_array($p->type,$types) ){
+      $node_ref = $p;
+      break;
+    }
+  }
+  $fe = variable_get('ekomundi_field_etape');
+  $etape = taxonomy_term_load( $node_ref->{$fe}['und'][0]['tid']);
+  $temps =$etape->field_txt_temps_1[$langcode]['0']['value'];
+
+  $fn = variable_get('ekomundi_field_niveau');
+  $niveau = taxonomy_term_load( $node_ref->{$fn}['und'][0]['tid']);
+  $genre =$niveau->field_txt_temps_1[$langcode]['0']['value'];
+
+   /*
+  //dpm(array($etape,$temps));
+  switch($node_ref->type){
+      case 'organisme':
+      case 'activite':
+      case 'vision':
+        $genre = 'pluriel2';
+        break;
+      case 'space':
+      case 'circle':
+        $genre = 'pluriel1';
+        break;
+      case 'intention':
+      case 'projet':
+        $genre = 'singulier';
+        break;
+  }
+  */
+
+  $fa = variable_get('ekomundi_ekopoint_field_action');
+  $action = taxonomy_term_load($ekopoint->{$fa}['und'][0]['tid']);
+  $conjugaison = $action->{'field_txt_'.$temps.'_'.$genre.'_1'}[$langcode]['0']['value'];
+  $string = $ekopoint->title;
+  $pattern= '/(.*)"(.*)"(.*)/i';
+  $replacement= '${1}'.trim(htmlspecialchars_decode($conjugaison, ENT_QUOTES )).'${3}';
+
+  $title=preg_replace($pattern, $replacement, $string);
+  return $title;
+}

@@ -1,0 +1,221 @@
+<?php
+
+define('FIELD_REF_NODE','field_entity_ref_node');
+
+/**
+ * Implements hook_permission().
+ */
+function eko_current_node_permission() {
+  return array(
+    'administer current node' =>  array(
+      'title' => t('Administrer Current node'),
+      'description' => t('Allow user to administrate current node module.'),
+    ),
+    'use current node' =>  array(
+      'title' => t('Use Current node'),
+      'description' => t('Allow user to use current node module.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function eko_current_node_menu() {
+  $items = array();
+  $items['admin/config/user-interface/current-node'] = array(
+    'title' => t('Current node configuration'),
+    'description' => t('desc'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('eko_current_node_settings_page'),
+    'access arguments' => array('administer current node'),
+    'file' => 'eko_current_node.admin.inc',
+  );
+  $items['current-node/ajax'] = array(
+    'page callback' => 'eko_current_node_ajax_callback',
+    'access callback' => 'user_access',
+    'access arguments' => array('use current node'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['current-node/ajax/%/%'] = array(
+    'page callback' => 'eko_current_node_ajax_callback',
+    'page arguments' => array(2, 3),
+    'access callback' => 'user_access',
+    'access arguments' => array('use current node'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_theme().
+ * /
+function mymodule_theme() {
+  return array(
+    'mymodule' => array(
+      'template' => 'mymodule',
+      'render element' => 'elements',
+    ),
+  );
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function eko_current_node_block_info() {
+  $block=array();
+  $blocks['current_node_block'] = array(
+    'info' => t('Current node'),
+  );
+  $blocks['current_node_operation_block'] = array(
+    'info' => t('Current node operation'),
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view($delta='').
+ */
+function eko_current_node_block_view($delta=''){
+  global $user;
+  if(user_access('use current node') ){
+    $block=array();
+    $current_node = variable_get('eko_current_node_' . $user->uid, 0);
+    switch($delta) {
+      case 'current_node_block':
+        drupal_add_library('system', 'drupal.ajax');
+        drupal_add_library('system', 'jquery.form');
+
+        $block['subject'] = t('Current node') ;
+        $output = '<div id="eko_current_node_view">';
+        if($current_node){
+
+          $node = node_load(variable_get('eko_current_node_' . $user->uid));
+					$nodeView = node_view($node,'titre_et_parents');
+ 					$output = drupal_render($nodeView);
+          //$output .= l($node->title, 'node/' . $node->nid);
+        }
+        else {
+          $output .= t('There is no defined current node.');
+        }
+        $output .= '</div>';
+        $block['content'] = $output;
+      break;
+
+      case 'current_node_operation_block':
+          $block['subject'] = t('Current node operation') ;
+          //$output = t('There is no defined current node.');
+          $output = '<div id="eko_current_node_operation-wrapper"></div>';
+          if($current_node){
+            $current_node = node_load($current_node);
+            if(arg(0) == 'node' && is_numeric(arg(1)) && arg(1) != $current_node->nid ){
+              $some_argument = arg(1) . '/link';
+              $items['items'] = array();
+              if(isset($current_node->{FIELD_REF_NODE})){
+                $items['items'][] = l(t('Link this node to the current node'), 'current-node/ajax/nojs/' . arg(1) . '/link', array('attributes' => array('class' => array('use-ajax')))) ;
+              }
+
+              $some_argument = arg(1) . '/save';
+              $node = node_load(arg(1));
+              $items['items'][] = l(t('Put this node as current node.'), 'current-node/ajax/nojs/' . $some_argument, array('attributes' => array('class' => array('use-ajax'))));
+
+
+              $output .= theme('item_list', $items);
+            }
+            else {
+              //$output .= t('You cannot do some operations on your current node itself.');
+              $some_argument = arg(1) . '/unset';
+              $output .= t('This node is your current node.') .'<br/>';
+              $output .= l(t('Unset it'), 'current-node/ajax/nojs/' . $some_argument, array('attributes' => array('class' => array('use-ajax'))));
+
+            }
+          }
+          else{
+            if(arg(0) == 'node' && is_numeric(arg(1)) ){
+              $some_argument = arg(1) . '/save';
+              $node = node_load(arg(1));
+              $items['items'][] = l(t('Put this node as current node.'), 'current-node/ajax/nojs/' . $some_argument, array('attributes' => array('class' => array('use-ajax'))));
+
+
+              $output .= theme('item_list', $items);
+
+            }
+          }
+          $block['content'] = $output;
+        break;
+
+    }
+    return $block;
+  }
+
+}
+
+function eko_current_node_ajax_callback($type = 'ajax', $nid, $action) {
+  global $user;
+
+  if ($type == 'ajax') {
+    switch($action) {
+      case 'save':
+        $wrapper = 'eko_current_node_operation-wrapper';
+        //$wrapper = 'eko_current_node_view';
+        variable_set('eko_current_node_' . $user->uid, $nid);
+        $node = node_load($nid);
+        //$output = '<div id="' . $wrapper . '">';
+        //$output .= drupal_render(node_view($node,'titre_et_parents'));
+        //$output .= l($node->title, 'node/' . $node->nid);
+        //$output .= '</div>';
+        $output = '<div id="' . $wrapper . '">';
+        $output .= t('This node is now your current node !');
+        $output .= '</div>';
+       break;
+      case 'unset':
+        $wrapper = 'eko_current_node-wrapper';
+        variable_set('eko_current_node_' . $user->uid, FALSE);
+        $node = node_load($nid);
+        $output = '<div id="' . $wrapper . '">';
+
+        $output .= t('Your current node has been unset.');
+        $output .= '</div>';
+
+       break;
+      case 'link':
+        $wrapper = 'eko_current_node_operation-wrapper';
+        $current_node = variable_get('eko_current_node_' . $user->uid, FALSE);
+        $output = '<div id="' . $wrapper . '">';
+        if($current_node){
+          _eko_current_node_link_node($nid, $current_node);
+          $output .= t('Node linked !');
+        }
+        else{
+          $output .= t('There is no current node defined.');
+        }
+        $output .= '</div>';
+        break;
+
+    }
+    $commands[] = ajax_command_replace('#' . $wrapper, $output);
+    $page = array('#type' => 'ajax', '#commands' => $commands);
+    ajax_deliver($page);
+  }
+  else {
+    $output = t("This is some content delivered via a page load.");
+    return $output;
+  }
+}
+
+function _eko_current_node_link_node($nid, $to_nid){
+  $to_node = node_load($to_nid);
+  $delta = $to_node->{FIELD_REF_NODE}['und'];
+  $exist = FALSE;
+  foreach($delta as $target_id){
+    if($nid == $target_id['target_id']){
+    $exist = TRUE;
+    break;
+    }
+  }
+  if(!$exist) {
+    $delta[] = array('target_id' => $nid);
+    $to_node->{FIELD_REF_NODE}['und'] = $delta;
+    node_save($to_node);
+  }
+};

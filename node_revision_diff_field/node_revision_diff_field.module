@@ -1,0 +1,277 @@
+<?php
+
+/**
+ * Implementation of hook_init().
+ */
+function node_revision_diff_field_init() {
+  $path = drupal_get_path('module', 'node_revision_diff_field');
+
+  drupal_add_css($path . '/node_revision_diff_field.css');
+}
+
+/**
+ * Implements hook_field_info().
+ */
+function node_revision_diff_field_field_info() {
+  return array(
+    'node_revision_diff' => array(
+      'label' => t('Comment diff'),
+      'default_widget' => 'field_extrawidgets_hidden',
+      'default_formatter' => 'node_revision_diff_default',
+    ),
+  );
+}
+
+/**
+ * Implements hook_formatter_info().
+ */
+function node_revision_diff_field_field_formatter_info() {
+  return array(
+    'node_revision_diff_default' => array(
+      'label' => t('Comment diff'),
+      'field types' => array(
+        'node_revision_diff',
+      ),
+    ),
+  );
+}
+
+/**
+* Implements of hook_is_empty().
+*
+*/
+function node_revision_diff_field_field_is_empty($item, $field) {
+  return empty($item['node_revision_diff']);
+}
+
+/**
+ * Implements hook_field_load().
+ */
+function node_revision_diff_field_field_load($entity_type, $entities, $field, $instances, $langcode, &$items, $age) {
+  $false_serialized = 'b:0;';
+  foreach ($entities as $id => $entity) {
+    foreach ($items[$id] as $delta => $item) {
+      foreach (array('old_value', 'new_value') as $key) {
+        $value = &$items[$id][$delta][$key];
+        // Don't try to unserialize numbers, once unserialized, the value
+        // can be all sorts of empty or the original might've been simply
+        // FALSE.
+        if (!is_numeric($value) && (($unserialize = @unserialize($value)) || $unserialize !== FALSE || $value === $false_serialized)) {
+          $value = $unserialize;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function node_revision_diff_field_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $fields = field_info_fields();
+  // Remove  'comment_node_'.
+  $bundle = substr($instance['bundle'], 13);
+  $instances = field_info_instances('node', $bundle);
+
+  $list = array();
+  foreach ($items as $item) {
+    $field_name = $item['field_name'];
+    $type = $fields[$field_name]['type'];
+    if(isset($instances[$field_name]['comment_enabled']) && $instances[$field_name]['comment_enabled']){
+      if(module_exists('title') && $field_name == 'title_field'){
+        $type = 'title_field_text';
+      }
+      // Is there a helper?
+      $function = "_node_revision_diff_format_changes_$type";
+      if (function_exists($function)) {
+        $diff = $function($item, $entity->nid, $bundle, $field_name);
+      }
+      else {
+        $old_value = _node_revision_diff_field_view_field($entity->nid, $bundle, $field_name, $item['old_value']);
+        $new_value = _node_revision_diff_field_view_field($entity->nid, $bundle, $field_name, $item['new_value']);
+        $diff = "$old_value &raquo; $new_value";
+      }
+      $list[] = array(
+        'label' => check_plain($instances[$field_name]['label']),
+        'value' => $diff,
+      );
+    }
+
+  }
+
+  return  $list ?  array(
+    '#theme' => 'node_revision_diff_item_list',
+    '#items' => $list,
+    '#title' => ''
+  ) : array();
+}
+
+/**
+ * Helper to render a field token-like.
+ */
+function _node_revision_diff_field_view_field($nid, $bundle, $field_name, $value, $prefix = '') {
+  $node = entity_create_stub_entity('node', array($nid, NULL, $bundle));
+  $node->{$field_name}[LANGUAGE_NONE] = $value;
+  _field_invoke_multiple('load', 'node', array($node->nid => $node));
+  return token_replace("[node:$field_name]", array('node' => $node), array('join' => $prefix));
+}
+
+/**
+ * Helper to show the difference in terms.
+ */
+function _node_revision_diff_format_changes_taxonomy_term_reference($item, $nid, $bundle, $field_name) {
+  $output = '';
+  foreach (array('old_value', 'new_value') as $key) {
+    $tids[$key] = array();
+    if ($item[$key]) {
+      foreach ($item[$key] as $data) {
+        $tids[$key][] = $data['tid'];
+      }
+    }
+  }
+  $tasks = array(
+    array('old_value', 'new_value', 'separator' => '-'),
+    array('new_value', 'old_value', 'separator' => '+'),
+  );
+  foreach ($tasks as $task) {
+    $pseudo_field_values = array();
+    foreach (array_diff($tids[$task[0]], $tids[$task[1]]) as $tid) {
+      $pseudo_field_values[] = array('tid' => $tid);
+    }
+    if ($pseudo_field_values) {
+      if ($output) {
+        $output .= ' &raquo ';
+      }
+      $output .= _node_revision_diff_field_view_field($nid, $bundle, $field_name, $pseudo_field_values, $task['separator']);
+    }
+  }
+  return $output;
+}
+
+/**
+ * Helper to show the difference in title with title field module.
+ */
+function _node_revision_diff_format_changes_title_field_text($item, $nid, $bundle, $field_name) {
+
+  $old_value = $item['old_value'][0]['value'];
+  $new_value = $item['new_value'][0]['value'];
+  $diff = "$old_value &raquo; $new_value";
+
+  return $diff;
+}
+
+/**
+ * Helper for long text fields: link to the revision view.
+ */
+function _node_revision_diff_format_changes_text_with_summary($item, $nid) {
+  return _node_revision_diff_format_changes_text_long($item, $nid);
+}
+
+/**
+ * Helper for long text fields: link to the revision view.
+ */
+function _node_revision_diff_format_changes_text_long($item, $nid) {
+  if (module_exists('diff')) {
+    return l(t('View changes'), "node/$nid/revisions/view/" . $item['old_value'] . '/' . $item['new_value']);
+  }
+  else {
+    return
+      l(t('Old'), "node/$nid/revisions/" . $item['old_value'] . '/view') .
+      ' &raquo;' .
+      l(t('New'), "node/$nid/revisions/" . $item['new_value'] . '/view');
+  }
+}
+
+/**
+ * Implement hook_form_field_ui_field_overview_form_alter().
+ */
+function node_revision_diff_field_form_field_ui_field_overview_form_alter(&$form) {
+  if ($form['#entity_type'] != 'comment' || node_revision_diff_field_get_field_name($form['#bundle'])) {
+    unset($form['fields']['_add_new_field']['type']['#options']['node_revision_diff']);
+  }
+}
+
+/**
+ * Get the node revision diff field name on a comment if it exists.
+ */
+function node_revision_diff_field_get_field_name($bundle) {
+  $instances = field_info_instances('comment', $bundle);
+  $fields = field_info_fields();
+  foreach (array_keys($instances) as $field_name) {
+    if ($fields[$field_name]['type'] == 'node_revision_diff') {
+      return $field_name;
+    }
+  }
+}
+
+function node_revision_diff_field_theme() {
+  return array(
+    'node_revision_diff_item_list' => array(
+      'variables' => array('items' => array(), 'title' => NULL, 'type' => 'ul', 'attributes' => array()),
+    ),
+  );
+}
+
+function theme_node_revision_diff_item_list($variables) {
+  $items = $variables['items'];
+  $title = $variables['title'];
+  $type = $variables['type'];
+  $attributes = $variables['attributes'];
+
+  // Only output the list container and title, if there are any list items.
+  // Check to see whether the block title exists before adding a header.
+  // Empty headers are not semantic and present accessibility challenges.
+  $output = '<div id="node-revision-diff-field">';
+  if (isset($title) && $title !== '') {
+    $output .= '<h3>' . $title . '</h3>';
+  }
+
+  if (!empty($items)) {
+    $output .= '<table><tbody>';
+    //$output .= "<$type" . drupal_attributes($attributes) . '>';
+    $num_items = count($items);
+    $i = 0;
+    foreach ($items as $item) {
+      $output .= '<tr>';
+      $output .= '<td>' .$item['label'] . '</td>';
+      $output .= '<td>' .$item['value'] . '</td>';
+      $output .= '</tr>';
+
+      /*$attributes = array();
+      $children = array();
+      $data = '';
+      $i++;
+      if (is_array($item)) {
+        foreach ($item as $key => $value) {
+          if ($key == 'data') {
+            $data = $value;
+          }
+          elseif ($key == 'children') {
+            $children = $value;
+          }
+          else {
+            $attributes[$key] = $value;
+          }
+        }
+      }
+      else {
+        $data = $item;
+      }
+      if (count($children) > 0) {
+        // Render nested list.
+        $data .= theme_item_list(array('items' => $children, 'title' => NULL, 'type' => $type, 'attributes' => $attributes));
+      }
+      if ($i == 1) {
+        $attributes['class'][] = 'first';
+      }
+      if ($i == $num_items) {
+        $attributes['class'][] = 'last';
+      }
+      $output .= '<li' . drupal_attributes($attributes) . '>' . $data . "</li>\n";*/
+    }
+    //$output .= "</$type>";
+    $output .= "</tbody></table>";
+  }
+  //$output .= '</div>';
+  return $output;
+}

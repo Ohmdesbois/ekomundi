@@ -1,0 +1,109 @@
+<?php
+
+define( 'NODE_TO_CLONE','2766');
+
+/**
+ * Implements hook_node_insert().
+ */
+function og_clone_hierarchy_node_view($node) {
+  global $user;
+  if($user->uid == 1 && $node->nid == NODE_TO_CLONE  ){
+    //$tree = og_get_hierarchy('node',NODE_TO_CLONE);
+    $entity_type = 'node';
+    $direction = 'children';
+    $entities = og_get_hierarchy($entity_type, NODE_TO_CLONE, array('nested' => TRUE, 'entity_type' => array($entity_type),'direction' => $direction));
+    //dpm($entities);
+    $arbo=array();
+    //dpm($entities);
+    foreach($entities as $entitie)
+      _read_hierarchy($entitie,$arbo);
+    //dpm($arbo);
+    //$new_entity = entity_ui_clone_entity($entity_type, $entity);
+    //{$entity_type . '_save'}($new_entity);
+
+  }
+
+}
+
+function recursive2_dump(&$array, &$dump, $curlevel=0) {
+  
+	foreach ($array as $id=>$class) {
+    
+	  if (isset($class->children)) {
+      $node = node_load($id);
+      $dump .= str_repeat(' ',$curlevel).'<node ID="' .$id .'" TEXT="'.$node->title.'">'."\n";
+      recursive2_dump($class->children, $dump, $curlevel+1);
+      $dump .= str_repeat(' ',$curlevel).'<site URL="http://92.243.17.64:1764/graphmind" BASEPATH="http://92.243.17.64:1764/" ENDPOINT="graphmind" />';
+      $dump .= str_repeat(' ',$curlevel).'</node>'."\n";
+	  } 
+    else {
+      if(!isset($class->name)){
+        $node = node_load($id);
+        $class->name = $node->title;
+      }
+      $dump .= str_repeat(' ',$curlevel) . '<node ID="' .$id .'" TEXT="'.$class->name.'"/>
+      <site URL="http://92.243.17.64:1764/graphmind" BASEPATH="http://92.243.17.64:1764/" ENDPOINT="graphmind" />
+      </node>'."\n";
+    }
+    
+	}
+
+}
+
+
+function _read_hierarchy($tree, &$arbo = array()){
+  if(isset($tree->children)){
+    foreach($tree->children as $etid => $child){
+       _read_hierarchy($child,$arbo);
+    }
+  }
+  else{
+    $arbo[$tree->gid][] = $tree->etid;
+  }
+}
+
+/**
+ *  Clones a node by directly saving it.
+ */
+function _og_clone_node($nid) {
+  if (is_numeric($nid)) {
+    global $user;
+
+    $node = node_load($nid);
+    if (isset($node->nid) && clone_is_permitted($node->type)) {
+      $original_node = clone $node;
+
+      $node->nid = NULL;
+      $node->vid = NULL;
+      $node->tnid = NULL;
+      // Anyonmymous users don't have a name.
+      // @see: drupal_anonymous_user().
+      $node->name = isset($user->name) ? $user->name : NULL;
+      $node->uid = $user->uid;
+      $node->created = NULL;
+      $node->menu = clone_node_clone_menu_link($original_node);
+      if (isset($node->book['mlid'])) {
+        $node->book['mlid'] = NULL;
+        $node->book['has_children'] = 0;
+      }
+      $node->path = NULL;
+      $node->files = array();
+      $node->title = t('Clone of !title', array('!title' => $node->title));
+      // Add an extra property as a flag.
+      $node->clone_from_original_nid = $original_node->nid;
+
+      if (variable_get('clone_reset_'. $node->type, FALSE)) {
+        $node_options = variable_get('node_options_'. $node->type, array('status', 'promote'));
+        // Fill in the default values.
+        foreach (array('status', 'moderate', 'promote', 'sticky', 'revision') as $key) {
+          // Cast to int since that's how they need to be saved to the DB.
+          $node->$key = (int) in_array($key, $node_options);
+        }
+      }
+
+
+      node_save($node);
+      return $node->nid;
+    }
+  }
+}

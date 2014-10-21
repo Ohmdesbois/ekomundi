@@ -1,0 +1,108 @@
+<?php
+
+/**
+ * @file
+ * Allows hiding of the node title field and automatic title creation.
+ */
+require_once drupal_get_path('module','ekomundi').'/includes/define.inc';
+
+define('ekopoint_nodetitle_DISABLED', 0);
+define('ekopoint_nodetitle_ENABLED', 1);
+define('ekopoint_nodetitle_OPTIONAL', 2);
+
+
+
+/**
+ * Implements hook_node_view().
+ */
+function ekopoint_nodetitle_node_view($node, $view_mode, $langcode) {
+  global $language ;
+
+  $langcode =  $language->language ;
+
+
+  if($node->type == variable_get('ekomundi_ekopoint_type', '') ){
+
+    if(isset($node->referencing_entity)) {
+      //dpm($node);
+      $ref = $node->referencing_entity;
+      $fc = entity_load('field_collection_item', array($ref->item_id));
+      //dpm($fc);
+      $query=db_select('field_data_field_col_ekopoint','fc')
+      ->fields('fc',array('entity_id'))
+      ->condition('fc.field_col_ekopoint_value',$ref->item_id,'=');
+
+      $node_ref = $query->execute()->fetchAssoc();
+
+      $node_ref = node_load($node_ref['entity_id']);
+      //dpm($node_ref);
+
+      $types = variable_get('ekomundi_parent_ekopoint_types', array());
+
+
+      $group_hiearchie = array();
+      _og_get_hierarchie($node_ref->nid,$group_hiearchie);
+
+      foreach($group_hiearchie as $parent){
+        $p = node_load($parent[0]);
+        if(in_array($p->type,$types) ){
+          $node_ref = $p;
+          break;
+        }
+      }
+//dpm(entity_load('taxonomy_term',array($node_ref->{FIELD_ETAPE}['und'][0]['tid'])));
+
+      $field_etape = variable_get('ekomundi_field_etape');
+      $field_niveau = variable_get('ekomundi_field_niveau');
+      $field_action = variable_get('ekomundi_field_action');
+
+      $etape = taxonomy_term_load( $node_ref->{$field_etape}['und'][0]['tid']);
+      $temps = $etape->field_txt_temps_1[$langcode]['0']['value'];
+
+      $niveau = taxonomy_term_load( $node_ref->{$field_niveau}['und'][0]['tid']);
+
+      //$temps=$etape->field_txt_temps_1[$langcode]['0']['value'];
+
+      //dpm(array($etape,$temps));
+      switch($niveau->tid){
+          case '8': $genre = 'pluriel2';
+            break;
+          case '7': $genre = 'pluriel1';
+            break;
+          case '6': $genre = 'singulier';
+            break;
+      }
+
+      $action = taxonomy_term_load($node->{$field_action}['und'][0]['tid']);
+      $conjugaison = $action->{'field_txt_'.$temps.'_'.$genre.'_1'}[$langcode]['0']['value'];
+      $string = $node->title;
+      $pattern = '/(.*)"(.*)"(.*)/i';
+      $replacement = '${1}'.trim(htmlspecialchars_decode($conjugaison, ENT_QUOTES )).'${3}';
+
+      $title = preg_replace($pattern, $replacement, $string);
+
+      //$title = str_replace("@action", htmlspecialchars_decode($conjugaison, ENT_QUOTES ), $node->title);
+      $node->title = $title;
+    }
+    else{
+      //drupal_set_message(t('Select <i>Rendered entity with referenced entity</i> as format display in manage display, to conjugate the ekopoint\'s title.'),'warning');
+    }
+
+  }
+
+  //return $node;
+
+}
+
+
+/**
+ *Implements hook_entity_view_alter().
+ */
+function ekopoint_nodetitle_entity_view_alter(&$build, $type) {
+
+  if(isset($build['#entity_type']) && $build['#entity_type'] == 'node' && $build['#bundle'] == 'ekopoint'){
+
+    $build['title']['#items'][0]['value']='<h4>'.l($build['#node']->title,'node/'.$build['#node']->nid) .'</h4>';
+  }
+
+}

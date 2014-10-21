@@ -1,0 +1,68 @@
+<?php
+
+/**
+ * Implements hook_permission().
+ * /
+function eko_toolbox_permission() {
+  return array(
+    'administer eko_toolbox' =>  array(
+      'title' => t('title'),
+      'description' => t('desc'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function eko_toolbox_menu() {
+  $items = array();
+  $items['admin/config/content/eko_toolbox'] = array(
+    'title' => t('title'),
+    'description' => t('desc'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('eko_toolbox_settings_page'),
+    'access arguments' => array('administer eko_toolbox'),
+    'file' => 'eko_toolbox.admin.inc',
+  );
+  return $items;
+}
+
+
+/**
+ * Implements hook_block_info().
+ */
+function eko_toolbox_block_info() {
+  $block=array();
+  $blocks['eko_toolbox_block'] = array(
+    'info' => t('Eko Toolbox'),
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view($delta='').
+ */
+function mymodule_block_view($delta=''){
+  $block=array();
+  switch($delta) {
+    case 'eko_toolbox_block':
+      $block['subject']=t('Toolbox') ;
+      $block['content']=$output;
+    break;
+  }
+  return $block;
+}
+
+/**
+ * Implements hook_theme().
+ * /
+function eko_toolbox_theme() {
+  return array(
+    'eko_toolbox' => array(
+      'template' => 'eko_toolbox',
+      'render element' => 'elements',
+    ),
+  );
+}
+*/

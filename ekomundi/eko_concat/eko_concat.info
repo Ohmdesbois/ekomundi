@@ -1,0 +1,17 @@
+name = Eko Concat
+description = Concatenne le point suivant le vocabulaire
+package = Ekomundi modules
+core = 7.x
+
+dependencies[] = entity_reference_tree
+
+files[] = eko_concat.module
+files[] = eko_concat_functions.inc
+
+
+; Information added by drupal.org packaging script on 2011-07-03
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "ekomundi"
+datestamp = "1309694840"
+

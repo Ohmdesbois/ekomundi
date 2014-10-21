@@ -1,0 +1,133 @@
+<?php
+
+define('PRIVATE_COMMENT',1);
+define('PUBLIC_COMMENT',0);
+
+define('FIELD_PRIVATE_COMMENT','field_private_comment');
+
+/**
+ * Implements hook_permission().
+ */
+function private_comment_permission() {
+  return array(
+    'view private comment' =>  array(
+      'title' => t('View private comment'),
+      'description' => t('Allow users to view a private comment.<i>note: if OG enable, there is also this permission to parameter in admin/config/group/permission</i>'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_permission().
+ */
+function private_comment_og_permission() {
+  return array(
+    'view private comment' =>  array(
+      'title' => t('View private comment'),
+      'description' => t('Allow users to view a private comment.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_comment_view_alter().
+ */
+function private_comment_comment_view_alter(&$build) {
+  $comment = $build['#comment'];
+  
+  if(isset($comment->{FIELD_PRIVATE_COMMENT})){
+    $nid = $comment->nid;
+    $node = node_load($nid);
+
+    if( !_private_comment_check_access($node) && $comment->{FIELD_PRIVATE_COMMENT}['und']['0']['value'] == PRIVATE_COMMENT ){ 
+      $build['#theme'] = 'private_comment';
+    }
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ * 
+ */
+function private_comment_form_comment_form_alter(&$form, &$form_state) {
+  $node = $form['#node'];
+  
+  // If user don't have access to view a private comment, hide the field and set the value to public.
+  if(!_private_comment_check_access($node) ){
+    //$form[FIELD_PRIVATE_COMMENT]['und']['#type'] = 'hidden';
+    unset($form[FIELD_PRIVATE_COMMENT]['und']['#options'][PRIVATE_COMMENT]);
+    $form[FIELD_PRIVATE_COMMENT]['und']['#default_value'] = PUBLIC_COMMENT ; 
+    //$form[FIELD_PRIVATE_COMMENT]['und']['#value'] = PUBLIC_COMMENT ; 
+    
+  }
+  
+  // When reply, set private comment to the same value as the parent if the first comment is private.
+  if($form['pid']['#value'] != NULL && $form['pid']['#value'] != 0){
+    $parent_comment = comment_load($form['pid']['#value']);
+    $parent_comment_private_value = $parent_comment->{FIELD_PRIVATE_COMMENT}['und'][0]['value'];
+    
+    if($parent_comment_private_value == PRIVATE_COMMENT) {
+      $form[FIELD_PRIVATE_COMMENT]['und']['#type'] = 'hidden';
+      $form[FIELD_PRIVATE_COMMENT]['und']['#default_value'] = $parent_comment_private_value ; 
+      $form[FIELD_PRIVATE_COMMENT]['und']['#value'] = $parent_comment_private_value ;    
+    }
+  }
+} 
+
+/**
+ * Process variables for private_comment.tpl.php.
+ *
+ * @see private_comment.tpl.php
+ */
+function private_comment_preprocess_private_comment(&$vars){
+  // Call the core comment preprocess to get all vars/
+  template_preprocess_comment($vars); 
+  
+  $comment_author_id = $vars['comment']->uid;
+  $comment_author = user_load($comment_author_id);
+  $vars['comment_is_private'] = t('%name posted a private comment.', array('%name' => format_username( $comment_author)) );
+
+  // This comment is private and user has no access, so unset comment reply link.
+  unset($vars['content']['links']['comment']['#links']['comment-reply']);
+}
+
+/**
+ * Implements hook_theme().
+ */
+function private_comment_theme() {
+  return array(
+    'private_comment' => array(
+      'template' => 'private_comment',
+      'render element' => 'elements',
+    ),
+  );
+}
+
+/**
+ * Check if the current user has access to the comment.
+ */
+function _private_comment_check_access($node) {
+  global $user;
+  if(module_exists('og')){
+    if(og_is_group('node', $node)){
+      $user_membership = og_get_membership('node',$node->nid,'user',$user->uid );
+      return (og_user_access('node',$node->nid,'view private comment')) ? TRUE : FALSE;
+    }
+    else{
+      if (og_is_group_content_type('node', $node->type) ){
+        $groups = og_get_entity_groups('node',$node);
+
+        $to_return = FALSE;
+        foreach($groups['node'] as $nid){
+          if( og_user_access('node',$nid,'view private comment') ){
+            $to_return = TRUE;
+          }
+        }
+        return $to_return;
+      }
+    }
+  }
+
+  return user_access('view private comment');
+}
+

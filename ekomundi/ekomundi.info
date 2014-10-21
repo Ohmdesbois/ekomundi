@@ -1,0 +1,19 @@
+name = Ekomundi
+description = Modules for ekomundi
+package = Ekomundi modules
+core = 7.x
+
+
+files[] = ekomundi.module
+
+; Views fields
+files[] = views/ekomundi_handler_field_icone_content_type.inc
+files[] = views/ekomundi_handler_field_dashboard_link.inc
+files[] = views/ekomundi_handler_field_title_to_dashboard_link.inc
+
+; Information added by drupal.org packaging script on 2011-07-03
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "ekomundi"
+datestamp = "1309694840"
+

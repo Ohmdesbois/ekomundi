@@ -1,0 +1,8 @@
+name = Views Tree Expandable
+description = A Views style plugin to display a tree expandable with jquery.treeview.
+package = Views
+core = 7.x
+dependencies[] = views
+files[] = views_tree_expandable_plugin_style_tree.inc
+
+

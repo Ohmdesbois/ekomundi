@@ -1,0 +1,5 @@
+name = Eko current node
+description = Save a node as current and provide some operations
+core = 7.x
+package = Ekomundi
+;dependencies[] = some module

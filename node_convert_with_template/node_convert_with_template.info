@@ -1,0 +1,4 @@
+name = Node Convert with Template
+description = "Converts a single node using node convert template."
+core = 7.x
+files[] = node_convert_with_template.module

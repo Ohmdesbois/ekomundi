@@ -1,0 +1,30 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and uninstall functions for the ekoconcat module.
+ */
+
+/**
+ * Implements hook_field_schema().
+ *
+ * This defines the actual database schema of the field, using the format
+ * used by the Schema API.
+ *
+ * The actual data we store here is just string of voc and term id.
+ *
+ * @see hook_field_schema()
+ * @link schemaapi Schema API @endlink
+ */
+function eko_concat_field_schema($field) {
+  $columns = array(
+    'pid' => array('type' => 'varchar', 'length' => 100, 'not null' => FALSE),
+  );
+  $indexes = array(
+    'pid' => array('pid'),
+  );
+  return array(
+    'columns' => $columns,
+    'indexes' => $indexes,
+  );
+}

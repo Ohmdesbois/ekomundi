@@ -1,0 +1,5 @@
+name = Term dependency
+description = BY JO ! Manage term name to have different value by content type
+package = "Taxonomy"
+version = 7.x-1.x-dev
+core = 7.x
